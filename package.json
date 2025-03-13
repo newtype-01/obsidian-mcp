@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-mcp",
+  "version": "1.0.0",
+  "main": "build/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "start": "node build/index.js",
+    "dev": "ts-node --esm src/index.ts",
+    "test": "node test-mcp.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "axios": "^1.8.2",
+    "dotenv": "^16.4.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}
