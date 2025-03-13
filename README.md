@@ -1,5 +1,7 @@
 # Obsidian MCP (Model Context Protocol) 服务器
 
+[English](./README.en.md) | 中文
+
 这个项目实现了一个 Model Context Protocol (MCP) 服务器，用于连接 AI 模型与 Obsidian 知识库。通过这个服务器，AI 模型可以直接访问和操作 Obsidian 笔记，包括读取、创建、更新和删除笔记，以及管理文件夹结构。
 
 ## 功能特点
