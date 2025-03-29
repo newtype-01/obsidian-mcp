@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  obsidian-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: obsidian-mcp
+    env_file:
+      - .env
+    volumes:
+      - ${OBSIDIAN_VAULT_PATH}:${OBSIDIAN_VAULT_PATH}
+    network_mode: "host"
+    restart: unless-stopped 

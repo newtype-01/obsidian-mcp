@@ -67,6 +67,8 @@ OBSIDIAN_API_PORT=27123
 
 ## Usage
 
+### Direct Usage
+
 1. Make sure Obsidian is running and the Local REST API plugin is installed and configured
 
 2. Start the MCP server:
@@ -77,12 +79,129 @@ npm start
 
 3. The server will communicate with AI models through standard input/output
 
+### Deployment with Docker
+
+#### Using Docker Compose (Recommended)
+
+1. Ensure Docker and Docker Compose are installed
+
+2. Copy and configure the environment file:
+
+```bash
+cp .env.example .env
+```
+
+3. Edit the `.env` file and fill in your actual configuration:
+
+```
+OBSIDIAN_VAULT_PATH=/path/to/your/vault
+OBSIDIAN_API_TOKEN=your_api_token_here
+OBSIDIAN_API_PORT=27123
+```
+
+4. Build and start the container:
+
+```bash
+docker-compose up -d
+```
+
+#### Using Docker Command
+
+1. Build the Docker image:
+
+```bash
+docker build -t obsidian-mcp .
+```
+
+2. Run the container:
+
+```bash
+docker run -d \
+  --name obsidian-mcp \
+  --env-file .env \
+  --network host \
+  -v $(OBSIDIAN_VAULT_PATH):$(OBSIDIAN_VAULT_PATH) \
+  obsidian-mcp
+```
+
+**Note:** When deploying with Docker, the container needs access to the Obsidian instance and vault on the host. Make sure to set the correct paths and ports in the `.env` file, and use `network_mode: "host"` or appropriate port mapping.
+
+## Configuring MCP Clients
+
+Mainstream MCP clients typically require configuration file edits to set up MCP servers. Here are common configuration approaches:
+
+### Using npx Method
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "npx",
+      "args": [
+        "obsidian-mcp"
+      ],
+      "env": {
+        // Can be left empty if you've already set up .env file in the project directory
+        // Or you can directly specify environment variables here:
+        // "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
+        // "OBSIDIAN_API_TOKEN": "your_api_token_here",
+        // "OBSIDIAN_API_PORT": "27123"
+      }
+    }
+  }
+}
+```
+
+### Using Local Installation Method
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "node",
+      "args": [
+        "/path/to/obsidian-mcp/build/index.js"
+      ],
+      "env": {
+        // Can be left empty if you've already set up .env file in the project directory
+      }
+    }
+  }
+}
+```
+
+### Using Docker Method
+
+If you've already deployed the MCP server using Docker, you can configure MCP clients as follows:
+
+```json
+{
+  "mcpServers": {
+    "obsidian-mcp": {
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "obsidian-mcp",
+        "npm",
+        "start"
+      ],
+      "env": {
+        // Docker container is already configured via .env file or environment variables, so this can remain empty
+      }
+    }
+  }
+}
+```
+
+**Note:** The `env` section in the above configurations can be left empty, especially when you've already configured the relevant parameters through the `.env` file or Docker environment variables. If you wish to specify environment variables directly in the client configuration, you can populate the `env` section with the appropriate key-value pairs.
+
 ## Testing
 
 The project includes a test script to verify server functionality:
 
 ```bash
-npm test
+node test-mcp.js
 ```
 
 ## Supported Tools
