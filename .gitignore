@@ -1,0 +1,35 @@
+# 依赖目录
+node_modules/
+
+# 编译输出
+build/
+dist/
+lib/
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 日志文件
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 编辑器目录和文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 测试文件
+test-mcp.js
+
+# 临时文件
+tmp/
+temp/ 

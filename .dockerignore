@@ -1,0 +1,10 @@
+node_modules
+build
+.git
+.gitignore
+.env
+.env.*
+.DS_Store
+README.md
+README.en.md
+test-mcp.js 

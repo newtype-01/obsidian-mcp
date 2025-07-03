@@ -1,0 +1,100 @@
+{
+  "dxt_version": "0.1",
+  "name": "obsidian-mcp",
+  "display_name": "Obsidian MCP Server",
+  "version": "1.1.2",
+  "description": "MCP server for interacting with Obsidian knowledge bases",
+  "long_description": "This MCP server enables AI models to interact with Obsidian knowledge bases through the Model Context Protocol. It provides tools for reading, creating, updating, and deleting notes, as well as managing folder structures and searching vault content.",
+  "author": {
+    "name": "Obsidian MCP Team",
+    "email": "support@obsidian-mcp.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/newtype-01/obsidian-mcp"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "node",
+    "entry_point": "build/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/build/index.js",
+        "--vault-path",
+        "${user_config.vault_path}",
+        "--api-token",
+        "${user_config.api_token}",
+        "--api-port",
+        "${user_config.api_port}"
+      ],
+      "env": {
+        "NODE_ENV": "production"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "list_notes",
+      "description": "List all notes in the Obsidian vault"
+    },
+    {
+      "name": "read_note", 
+      "description": "Read the content of a note in the Obsidian vault"
+    },
+    {
+      "name": "create_note",
+      "description": "Create a new note in the Obsidian vault"
+    },
+    {
+      "name": "update_note",
+      "description": "Update an existing note in the Obsidian vault"
+    },
+    {
+      "name": "search_vault",
+      "description": "Search for content in the Obsidian vault"
+    },
+    {
+      "name": "delete_note",
+      "description": "Delete a note from the Obsidian vault"
+    },
+    {
+      "name": "move_note",
+      "description": "Move or rename a note to a new location in the Obsidian vault"
+    },
+    {
+      "name": "manage_folder",
+      "description": "Create, rename, move, or delete a folder in the Obsidian vault"
+    }
+  ],
+  "user_config": {
+    "vault_path": {
+      "type": "string",
+      "title": "Vault Path",
+      "description": "Path to your Obsidian vault",
+      "required": true
+    },
+    "api_token": {
+      "type": "string",
+      "title": "API Token",
+      "description": "API token for Obsidian Local REST API plugin",
+      "required": true
+    },
+    "api_port": {
+      "type": "string",
+      "title": "API Port",
+      "description": "API port for Obsidian Local REST API",
+      "default": "27123",
+      "required": false
+    }
+  },
+  "keywords": [
+    "obsidian",
+    "mcp",
+    "knowledge-base",
+    "notes",
+    "markdown",
+    "productivity"
+  ],
+  "license": "ISC"
+}
