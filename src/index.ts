@@ -75,6 +75,17 @@ const API_PORT = CONFIG.apiPort;
 const API_HOST = CONFIG.apiHost;
 const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
 
+// Debug logging for configuration
+console.error(`[DEBUG] Vault Path: ${VAULT_PATH}`);
+console.error(`[DEBUG] API Base URL: ${API_BASE_URL}`);
+console.error(`[DEBUG] API Token: ${API_TOKEN ? API_TOKEN.substring(0, 8) + '...' : 'NOT SET'}`);
+
+// Validate vault path exists
+if (!fs.existsSync(VAULT_PATH)) {
+  console.error(`[ERROR] Vault path does not exist: ${VAULT_PATH}`);
+  console.error(`[ERROR] Please check your vault path configuration`);
+}
+
 class ObsidianMcpServer {
   private server: Server;
   private api: AxiosInstance;
@@ -352,15 +363,10 @@ class ObsidianMcpServer {
         }
       } catch (error) {
         console.error(`Error executing tool ${request.params.name}:`, error);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-            },
-          ],
-          isError: true,
-        };
+        throw new McpError(
+          ErrorCode.InternalError,
+          `${error instanceof Error ? error.message : String(error)}`
+        );
       }
     });
   }
