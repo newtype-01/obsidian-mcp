@@ -258,34 +258,6 @@ class ObsidianMcpServer {
           },
         },
         {
-          name: 'update_note',
-          description: 'Update an existing note in the Obsidian vault - can replace entire content or append/insert at specific positions',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              path: {
-                type: 'string',
-                description: 'Path to the note within the vault',
-              },
-              content: {
-                type: 'string',
-                description: 'Content to add or replace',
-              },
-              operation: {
-                type: 'string',
-                description: 'Type of update operation',
-                enum: ['replace', 'append', 'prepend', 'insert'],
-                default: 'replace'
-              },
-              position: {
-                type: 'number',
-                description: 'Line number for insert operation (1-based, optional)',
-              },
-            },
-            required: ['path', 'content'],
-          },
-        },
-        {
           name: 'search_vault',
           description: 'Search for content in the Obsidian vault',
           inputSchema: {
@@ -353,8 +325,6 @@ class ObsidianMcpServer {
             return await this.handleReadNote(request.params.arguments);
           case 'create_note':
             return await this.handleCreateNote(request.params.arguments);
-          case 'update_note':
-            return await this.handleUpdateNote(request.params.arguments);
           case 'search_vault':
             return await this.handleSearchVault(request.params.arguments);
           case 'delete_note':
@@ -428,25 +398,6 @@ class ObsidianMcpServer {
     };
   }
 
-  private async handleUpdateNote(args: any) {
-    if (!args?.path || !args?.content) {
-      throw new Error('Path and content are required');
-    }
-    
-    const operation = args.operation || 'replace';
-    const position = args.position;
-    
-    const result = await this.updateNote(args.path, args.content, operation, position);
-    
-    return {
-      content: [
-        {
-          type: 'text',
-          text: result,
-        },
-      ],
-    };
-  }
 
   private async handleSearchVault(args: any) {
     if (!args?.query) {
@@ -638,89 +589,6 @@ class ObsidianMcpServer {
     }
   }
 
-  private async updateNote(notePath: string, content: string, operation: string = 'replace', position?: number): Promise<string> {
-    try {
-      let finalContent = content;
-      
-      if (operation !== 'replace') {
-        // Read existing content first
-        const existingContent = await this.readNote(notePath);
-        
-        switch (operation) {
-          case 'append':
-            finalContent = existingContent + (existingContent.endsWith('\n') ? '' : '\n') + content;
-            break;
-          case 'prepend':
-            finalContent = content + (content.endsWith('\n') ? '' : '\n') + existingContent;
-            break;
-          case 'insert':
-            if (position === undefined) {
-              throw new Error('Position is required for insert operation');
-            }
-            const lines = existingContent.split('\n');
-            const insertIndex = Math.max(0, Math.min(position - 1, lines.length));
-            lines.splice(insertIndex, 0, content);
-            finalContent = lines.join('\n');
-            break;
-        }
-      }
-      
-      // Try using the Obsidian API
-      await this.api.put(`/vault/${encodeURIComponent(notePath)}`, { content: finalContent });
-      
-      return this.getOperationSuccessMessage(operation, notePath, content, position);
-    } catch (error) {
-      // Fallback to file system if API fails
-      const fullPath = path.join(VAULT_PATH, notePath);
-      
-      if (!fs.existsSync(fullPath)) {
-        throw new Error(`Note not found: ${notePath}`);
-      }
-      
-      let finalContent = content;
-      
-      if (operation !== 'replace') {
-        // Read existing content first
-        const existingContent = fs.readFileSync(fullPath, 'utf-8');
-        
-        switch (operation) {
-          case 'append':
-            finalContent = existingContent + (existingContent.endsWith('\n') ? '' : '\n') + content;
-            break;
-          case 'prepend':
-            finalContent = content + (content.endsWith('\n') ? '' : '\n') + existingContent;
-            break;
-          case 'insert':
-            if (position === undefined) {
-              throw new Error('Position is required for insert operation');
-            }
-            const lines = existingContent.split('\n');
-            const insertIndex = Math.max(0, Math.min(position - 1, lines.length));
-            lines.splice(insertIndex, 0, content);
-            finalContent = lines.join('\n');
-            break;
-        }
-      }
-      
-      fs.writeFileSync(fullPath, finalContent, 'utf-8');
-      
-      return this.getOperationSuccessMessage(operation, notePath, content, position);
-    }
-  }
-  
-  private getOperationSuccessMessage(operation: string, notePath: string, content: string, position?: number): string {
-    switch (operation) {
-      case 'append':
-        return `Appended content to ${notePath}`;
-      case 'prepend':
-        return `Prepended content to ${notePath}`;
-      case 'insert':
-        return `Inserted content at line ${position} in ${notePath}`;
-      case 'replace':
-      default:
-        return `Updated content in ${notePath}`;
-    }
-  }
 
   private async searchVault(query: string): Promise<any[]> {
     try {

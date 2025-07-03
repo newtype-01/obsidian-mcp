@@ -190,7 +190,6 @@ MCP 服务器提供以下工具：
 - `list_notes`: 列出知识库中的所有笔记
 - `read_note`: 读取指定笔记的内容
 - `create_note`: 创建新笔记
-- `update_note`: 更新现有笔记
 - `search_vault`: 在知识库中搜索内容
 - `delete_note`: 删除笔记
 - `move_note`: 移动或重命名笔记到新位置

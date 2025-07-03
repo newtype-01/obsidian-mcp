@@ -36,7 +36,6 @@ npm test
 - `list_notes` - List all notes in vault (with optional folder filtering)
 - `read_note` - Read specific note content
 - `create_note` - Create new notes
-- `update_note` - Update existing notes
 - `search_vault` - Full-text search across vault
 - `delete_note` - Delete notes
 - `move_note` - Move/rename notes to new locations (filesystem-level operations, supports all file types including PDF, images, and large files without content copying)
@@ -104,13 +103,13 @@ All methods require these configuration values:
 
 The project includes Docker configuration (`Dockerfile` and `docker-compose.yml`) for containerized deployment with proper environment variable handling and volume mounting for vault access.
 
-## Recent Updates (v1.1.2)
+## Recent Updates (v1.2.5)
 
-- Added `move_note` tool for efficient file operations
-- Fixed NPX configuration issues in MCP client setup
+- Removed `update_note` tool due to JSON formatting issues with MCP clients
+- Fixed environment variable configuration: require OBSIDIAN_ prefix for NPM/global installation
 - Updated all installation methods with corrected parameter formats
 - Enhanced documentation across README files
-- Improved DXT package with new functionality
+- Improved DXT package with latest functionality
 
 ## Memories
 

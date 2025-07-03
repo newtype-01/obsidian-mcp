@@ -197,7 +197,6 @@ The MCP server provides the following tools:
 - `list_notes`: List all notes in the Obsidian vault
 - `read_note`: Read the content of a note in the Obsidian vault
 - `create_note`: Create a new note in the Obsidian vault
-- `update_note`: Update an existing note in the Obsidian vault
 - `search_vault`: Search for content in the Obsidian vault
 - `delete_note`: Delete a note from the Obsidian vault
 - `move_note`: Move or rename a note to a new location in the Obsidian vault
