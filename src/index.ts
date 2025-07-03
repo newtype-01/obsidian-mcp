@@ -697,14 +697,14 @@ class ObsidianMcpServer {
   private getOperationSuccessMessage(operation: string, notePath: string, content: string, position?: number): string {
     switch (operation) {
       case 'append':
-        return `Successfully appended "${content}" to ${notePath}`;
+        return `✅ Appended "${content}" to ${notePath}`;
       case 'prepend':
-        return `Successfully prepended "${content}" to ${notePath}`;
+        return `✅ Prepended "${content}" to ${notePath}`;
       case 'insert':
-        return `Successfully inserted "${content}" at line ${position} in ${notePath}`;
+        return `✅ Inserted "${content}" at line ${position} in ${notePath}`;
       case 'replace':
       default:
-        return `Successfully replaced content in ${notePath}`;
+        return `✅ Updated content in ${notePath}`;
     }
   }
 
