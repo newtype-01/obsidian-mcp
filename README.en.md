@@ -59,14 +59,14 @@ Simply add the following configuration to your MCP client config file:
 {
   "mcpServers": {
     "obsidian-mcp": {
-      "command": "bash",
+      "command": "npx",
       "args": [
-        "-c",
-        "npx @huangyihe/obsidian-mcp --vault-path \"$VAULT_PATH\" --api-token \"$API_TOKEN\""
+        "@huangyihe/obsidian-mcp"
       ],
       "env": {
-        "VAULT_PATH": "/path/to/your/vault",
-        "API_TOKEN": "your_api_token"
+        "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
+        "OBSIDIAN_API_TOKEN": "your_api_token",
+        "OBSIDIAN_API_PORT": "27123"
       }
     }
   }
@@ -94,12 +94,11 @@ npm install -g @huangyihe/obsidian-mcp
   "mcpServers": {
     "obsidian-mcp": {
       "command": "obsidian-mcp",
-      "args": [
-        "--vault-path",
-        "/path/to/your/vault",
-        "--api-token",
-        "your_api_token"
-      ]
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
+        "OBSIDIAN_API_TOKEN": "your_api_token",
+        "OBSIDIAN_API_PORT": "27123"
+      }
     }
   }
 }
@@ -170,9 +169,11 @@ docker run -d \
 
 All installation methods require the following configuration:
 
-- `OBSIDIAN_VAULT_PATH` / `vault_path`: Path to your Obsidian vault
-- `OBSIDIAN_API_TOKEN` / `api_token`: API token for Obsidian Local REST API plugin
-- `OBSIDIAN_API_PORT` / `api_port`: API port for Obsidian Local REST API (default: 27123)
+- `OBSIDIAN_VAULT_PATH`: Path to your Obsidian vault
+- `OBSIDIAN_API_TOKEN`: API token for Obsidian Local REST API plugin  
+- `OBSIDIAN_API_PORT`: API port for Obsidian Local REST API (default: 27123)
+
+⚠️ **Important**: For remote NPM installation and global installation, you MUST use the `OBSIDIAN_` prefix for environment variables. The variables `VAULT_PATH`, `API_TOKEN` without the prefix will not work correctly.
 
 ### Getting API Token
 

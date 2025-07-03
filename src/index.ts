@@ -16,6 +16,8 @@ import * as fs from 'fs';
 // Parse command line arguments for NPM usage
 function parseCliArgs() {
   const args = process.argv.slice(2);
+  
+  // First try environment variables, then CLI args as fallback
   const config = {
     vaultPath: process.env.OBSIDIAN_VAULT_PATH || './vault',
     apiToken: process.env.OBSIDIAN_API_TOKEN || '',
@@ -709,14 +711,14 @@ class ObsidianMcpServer {
   private getOperationSuccessMessage(operation: string, notePath: string, content: string, position?: number): string {
     switch (operation) {
       case 'append':
-        return `✅ Appended "${content}" to ${notePath}`;
+        return `Appended content to ${notePath}`;
       case 'prepend':
-        return `✅ Prepended "${content}" to ${notePath}`;
+        return `Prepended content to ${notePath}`;
       case 'insert':
-        return `✅ Inserted "${content}" at line ${position} in ${notePath}`;
+        return `Inserted content at line ${position} in ${notePath}`;
       case 'replace':
       default:
-        return `✅ Updated content in ${notePath}`;
+        return `Updated content in ${notePath}`;
     }
   }
 

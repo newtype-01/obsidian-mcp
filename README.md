@@ -59,14 +59,14 @@
 {
   "mcpServers": {
     "obsidian-mcp": {
-      "command": "bash",
+      "command": "npx",
       "args": [
-        "-c",
-        "npx @huangyihe/obsidian-mcp --vault-path \"$VAULT_PATH\" --api-token \"$API_TOKEN\""
+        "@huangyihe/obsidian-mcp"
       ],
       "env": {
-        "VAULT_PATH": "/path/to/your/vault",
-        "API_TOKEN": "your_api_token"
+        "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
+        "OBSIDIAN_API_TOKEN": "your_api_token",
+        "OBSIDIAN_API_PORT": "27123"
       }
     }
   }
@@ -94,12 +94,11 @@ npm install -g @huangyihe/obsidian-mcp
   "mcpServers": {
     "obsidian-mcp": {
       "command": "obsidian-mcp",
-      "args": [
-        "--vault-path",
-        "/path/to/your/vault",
-        "--api-token",
-        "your_api_token"
-      ]
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
+        "OBSIDIAN_API_TOKEN": "your_api_token",
+        "OBSIDIAN_API_PORT": "27123"
+      }
     }
   }
 }
@@ -170,9 +169,11 @@ docker run -d \
 
 所有安装方式都需要以下配置：
 
-- `OBSIDIAN_VAULT_PATH` / `vault_path`: Obsidian 知识库的路径
-- `OBSIDIAN_API_TOKEN` / `api_token`: Obsidian Local REST API 插件的 API 令牌
-- `OBSIDIAN_API_PORT` / `api_port`: Obsidian Local REST API 插件的端口号 (默认为 27123)
+- `OBSIDIAN_VAULT_PATH`: Obsidian 知识库的路径
+- `OBSIDIAN_API_TOKEN`: Obsidian Local REST API 插件的 API 令牌
+- `OBSIDIAN_API_PORT`: Obsidian Local REST API 插件的端口号 (默认为 27123)
+
+⚠️ **重要提示**: 对于远程 NPM 安装和全局安装，必须使用 `OBSIDIAN_` 前缀的环境变量。不带前缀的变量如 `VAULT_PATH`、`API_TOKEN` 将无法正常工作。
 
 ### 获取 API Token
 
