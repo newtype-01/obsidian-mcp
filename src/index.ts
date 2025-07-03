@@ -76,14 +76,20 @@ const API_HOST = CONFIG.apiHost;
 const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
 
 // Debug logging for configuration
-console.error(`[DEBUG] Vault Path: ${VAULT_PATH}`);
-console.error(`[DEBUG] API Base URL: ${API_BASE_URL}`);
-console.error(`[DEBUG] API Token: ${API_TOKEN ? API_TOKEN.substring(0, 8) + '...' : 'NOT SET'}`);
+console.error(`[DEBUG] Command line args: ${JSON.stringify(process.argv)}`);
+console.error(`[DEBUG] Environment variables:`);
+console.error(`[DEBUG] - OBSIDIAN_VAULT_PATH: ${process.env.OBSIDIAN_VAULT_PATH || 'NOT SET'}`);
+console.error(`[DEBUG] - OBSIDIAN_API_TOKEN: ${process.env.OBSIDIAN_API_TOKEN ? 'SET' : 'NOT SET'}`);
+console.error(`[DEBUG] Parsed configuration:`);
+console.error(`[DEBUG] - Vault Path: ${VAULT_PATH}`);
+console.error(`[DEBUG] - API Base URL: ${API_BASE_URL}`);
+console.error(`[DEBUG] - API Token: ${API_TOKEN ? API_TOKEN.substring(0, 8) + '...' : 'NOT SET'}`);
 
 // Validate vault path exists
 if (!fs.existsSync(VAULT_PATH)) {
   console.error(`[ERROR] Vault path does not exist: ${VAULT_PATH}`);
   console.error(`[ERROR] Please check your vault path configuration`);
+  console.error(`[ERROR] Current working directory: ${process.cwd()}`);
 }
 
 class ObsidianMcpServer {
