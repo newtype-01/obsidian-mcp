@@ -240,7 +240,7 @@ class ObsidianMcpServer {
         },
         {
           name: 'update_note',
-          description: 'Update an existing note in the Obsidian vault',
+          description: 'Update an existing note in the Obsidian vault - can replace entire content or append/insert at specific positions',
           inputSchema: {
             type: 'object',
             properties: {
@@ -250,7 +250,17 @@ class ObsidianMcpServer {
               },
               content: {
                 type: 'string',
-                description: 'New content of the note',
+                description: 'Content to add or replace',
+              },
+              operation: {
+                type: 'string',
+                description: 'Type of update operation',
+                enum: ['replace', 'append', 'prepend', 'insert'],
+                default: 'replace'
+              },
+              position: {
+                type: 'number',
+                description: 'Line number for insert operation (1-based, optional)',
               },
             },
             required: ['path', 'content'],
@@ -409,13 +419,16 @@ class ObsidianMcpServer {
       throw new Error('Path and content are required');
     }
     
-    await this.updateNote(args.path, args.content);
+    const operation = args.operation || 'replace';
+    const position = args.position;
+    
+    const result = await this.updateNote(args.path, args.content, operation, position);
     
     return {
       content: [
         {
           type: 'text',
-          text: `Note updated successfully at ${args.path}`,
+          text: result,
         },
       ],
     };
@@ -611,13 +624,38 @@ class ObsidianMcpServer {
     }
   }
 
-  private async updateNote(notePath: string, content: string): Promise<void> {
+  private async updateNote(notePath: string, content: string, operation: string = 'replace', position?: number): Promise<string> {
     try {
-      // First try using the Obsidian API
-      await this.api.put(`/vault/${encodeURIComponent(notePath)}`, { content });
-    } catch (error) {
-      console.warn('API request failed, falling back to file system:', error);
+      let finalContent = content;
       
+      if (operation !== 'replace') {
+        // Read existing content first
+        const existingContent = await this.readNote(notePath);
+        
+        switch (operation) {
+          case 'append':
+            finalContent = existingContent + (existingContent.endsWith('\n') ? '' : '\n') + content;
+            break;
+          case 'prepend':
+            finalContent = content + (content.endsWith('\n') ? '' : '\n') + existingContent;
+            break;
+          case 'insert':
+            if (position === undefined) {
+              throw new Error('Position is required for insert operation');
+            }
+            const lines = existingContent.split('\n');
+            const insertIndex = Math.max(0, Math.min(position - 1, lines.length));
+            lines.splice(insertIndex, 0, content);
+            finalContent = lines.join('\n');
+            break;
+        }
+      }
+      
+      // Try using the Obsidian API
+      await this.api.put(`/vault/${encodeURIComponent(notePath)}`, { content: finalContent });
+      
+      return this.getOperationSuccessMessage(operation, notePath, content, position);
+    } catch (error) {
       // Fallback to file system if API fails
       const fullPath = path.join(VAULT_PATH, notePath);
       
@@ -625,7 +663,48 @@ class ObsidianMcpServer {
         throw new Error(`Note not found: ${notePath}`);
       }
       
-      fs.writeFileSync(fullPath, content, 'utf-8');
+      let finalContent = content;
+      
+      if (operation !== 'replace') {
+        // Read existing content first
+        const existingContent = fs.readFileSync(fullPath, 'utf-8');
+        
+        switch (operation) {
+          case 'append':
+            finalContent = existingContent + (existingContent.endsWith('\n') ? '' : '\n') + content;
+            break;
+          case 'prepend':
+            finalContent = content + (content.endsWith('\n') ? '' : '\n') + existingContent;
+            break;
+          case 'insert':
+            if (position === undefined) {
+              throw new Error('Position is required for insert operation');
+            }
+            const lines = existingContent.split('\n');
+            const insertIndex = Math.max(0, Math.min(position - 1, lines.length));
+            lines.splice(insertIndex, 0, content);
+            finalContent = lines.join('\n');
+            break;
+        }
+      }
+      
+      fs.writeFileSync(fullPath, finalContent, 'utf-8');
+      
+      return this.getOperationSuccessMessage(operation, notePath, content, position);
+    }
+  }
+  
+  private getOperationSuccessMessage(operation: string, notePath: string, content: string, position?: number): string {
+    switch (operation) {
+      case 'append':
+        return `Successfully appended "${content}" to ${notePath}`;
+      case 'prepend':
+        return `Successfully prepended "${content}" to ${notePath}`;
+      case 'insert':
+        return `Successfully inserted "${content}" at line ${position} in ${notePath}`;
+      case 'replace':
+      default:
+        return `Successfully replaced content in ${notePath}`;
     }
   }
 
