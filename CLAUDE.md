@@ -39,7 +39,7 @@ npm test
 - `update_note` - Update existing notes
 - `search_vault` - Full-text search across vault
 - `delete_note` - Delete notes
-- `move_note` - Move/rename notes to new locations (supports all file types including PDF)
+- `move_note` - Move/rename notes to new locations (filesystem-level operations, supports all file types including PDF, images, and large files without content copying)
 - `manage_folder` - CRUD operations for folders (create/rename/move/delete)
 
 ### Environment Variables:
@@ -86,6 +86,28 @@ All methods require these configuration values:
 - `api_token` / `OBSIDIAN_API_TOKEN`: Obsidian Local REST API plugin token
 - `api_port` / `OBSIDIAN_API_PORT`: API port (default: 27123)
 
+## Key Features
+
+### Advanced File Operations
+- **Efficient Note Moving**: Uses filesystem-level operations (fs.renameSync) instead of content copying
+- **Universal File Support**: Handles all file types including PDF, images, videos, and binary files
+- **Large File Safe**: No upper limit on file size, avoids model context length restrictions  
+- **Atomic Operations**: Ensures file integrity with atomic filesystem operations
+- **Auto Directory Management**: Creates destination directories and cleans up empty source directories
+
+### Robust Error Handling
+- **Dual API Strategy**: Primary Obsidian REST API with filesystem fallback
+- **Comprehensive Validation**: Checks source existence and destination conflicts
+- **Graceful Degradation**: Falls back to reliable filesystem operations when API fails
+
 ## Docker Support
 
 The project includes Docker configuration (`Dockerfile` and `docker-compose.yml`) for containerized deployment with proper environment variable handling and volume mounting for vault access.
+
+## Recent Updates (v1.1.2)
+
+- Added `move_note` tool for efficient file operations
+- Fixed NPX configuration issues in MCP client setup
+- Updated all installation methods with corrected parameter formats
+- Enhanced documentation across README files
+- Improved DXT package with new functionality
