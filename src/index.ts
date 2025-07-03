@@ -101,6 +101,7 @@ class ObsidianMcpServer {
         'Authorization': `Bearer ${API_TOKEN}`,
         'Content-Type': 'application/json',
       },
+      timeout: 10000, // 10 second timeout
     });
 
     // Set up request handlers
@@ -684,18 +685,34 @@ class ObsidianMcpServer {
   }
 
   private async moveNote(sourcePath: string, destinationPath: string): Promise<void> {
+    console.log(`[DEBUG] Starting move operation: ${sourcePath} -> ${destinationPath}`);
+    
     try {
-      // First try using the Obsidian API if it supports file moving
-      // Note: Check if Obsidian Local REST API supports direct file moving
-      await this.api.put(`/vault/${encodeURIComponent(sourcePath)}/move`, { 
-        newPath: destinationPath 
-      });
+      // First try using the Obsidian API - using standard file operations
+      // Most Obsidian Local REST API implementations don't support direct move operations
+      // So we'll read the source file and create it at the destination, then delete the source
+      console.log(`[DEBUG] Attempting API-based move operation`);
+      
+      // Read source file content via API
+      const sourceResponse = await this.api.get(`/vault/${encodeURIComponent(sourcePath)}`);
+      const content = sourceResponse.data.content || '';
+      
+      // Create destination file via API
+      await this.api.post(`/vault/${encodeURIComponent(destinationPath)}`, { content });
+      
+      // Delete source file via API
+      await this.api.delete(`/vault/${encodeURIComponent(sourcePath)}`);
+      
+      console.log(`[DEBUG] API-based move operation completed successfully`);
     } catch (error) {
-      console.warn('API request failed, falling back to file system:', error);
+      console.warn(`[DEBUG] API request failed, falling back to file system:`, error);
       
       // Fallback to file system operations
       const sourceFullPath = path.join(VAULT_PATH, sourcePath);
       const destFullPath = path.join(VAULT_PATH, destinationPath);
+      
+      console.log(`[DEBUG] Source path: ${sourceFullPath}`);
+      console.log(`[DEBUG] Destination path: ${destFullPath}`);
       
       // Validate source file exists
       if (!fs.existsSync(sourceFullPath)) {
@@ -710,18 +727,28 @@ class ObsidianMcpServer {
       // Create destination directory if it doesn't exist
       const destDir = path.dirname(destFullPath);
       if (!fs.existsSync(destDir)) {
+        console.log(`[DEBUG] Creating destination directory: ${destDir}`);
         fs.mkdirSync(destDir, { recursive: true });
       }
       
       // Use filesystem rename (works for all file types including PDF)
-      fs.renameSync(sourceFullPath, destFullPath);
+      console.log(`[DEBUG] Performing filesystem rename operation`);
+      try {
+        fs.renameSync(sourceFullPath, destFullPath);
+        console.log(`[DEBUG] Filesystem rename completed successfully`);
+      } catch (renameError) {
+        console.error(`[DEBUG] Filesystem rename failed:`, renameError);
+        throw new Error(`Failed to move file: ${renameError}`);
+      }
       
       // Clean up empty source directory if needed
       const sourceDir = path.dirname(sourceFullPath);
       if (sourceDir !== VAULT_PATH) {
         try {
+          console.log(`[DEBUG] Checking if source directory is empty: ${sourceDir}`);
           const items = fs.readdirSync(sourceDir);
           if (items.length === 0) {
+            console.log(`[DEBUG] Removing empty source directory: ${sourceDir}`);
             fs.rmdirSync(sourceDir);
           }
         } catch (error) {

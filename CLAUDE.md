@@ -111,3 +111,7 @@ The project includes Docker configuration (`Dockerfile` and `docker-compose.yml`
 - Updated all installation methods with corrected parameter formats
 - Enhanced documentation across README files
 - Improved DXT package with new functionality
+
+## Memories
+
+- to memorize
