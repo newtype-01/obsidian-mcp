@@ -4,6 +4,12 @@ English | [中文](./README.md)
 
 This project implements a Model Context Protocol (MCP) server for connecting AI models with Obsidian knowledge bases. Through this server, AI models can directly access and manipulate Obsidian notes, including reading, creating, updating, and deleting notes, as well as managing folder structures.
 
+Created by huangyihe
+- Prompt House: https://prompthouse.app/
+- YouTube: https://www.youtube.com/@huanyihe777
+- Twitter: https://x.com/huangyihe
+- Community: https://t.zsxq.com/19IaNz5wK
+
 ## Features
 
 - Seamless integration with Obsidian knowledge bases
@@ -11,6 +17,18 @@ This project implements a Model Context Protocol (MCP) server for connecting AI 
 - Support for creating, renaming, moving, and deleting folders
 - Full-text search functionality
 - Compliance with the Model Context Protocol specification
+
+## Supported Tools
+
+The MCP server provides the following tools:
+
+- `list_notes`: List all notes in the Obsidian vault
+- `read_note`: Read the content of a note in the Obsidian vault
+- `create_note`: Create a new note in the Obsidian vault
+- `search_vault`: Search for content in the Obsidian vault
+- `delete_note`: Delete a note from the Obsidian vault
+- `move_note`: Move or rename a note to a new location in the Obsidian vault
+- `manage_folder`: Create, rename, move, or delete a folder in the Obsidian vault
 
 ## Prerequisites
 
@@ -190,18 +208,6 @@ The project includes a test script to verify server functionality:
 node test-mcp.js
 ```
 
-## Supported Tools
-
-The MCP server provides the following tools:
-
-- `list_notes`: List all notes in the Obsidian vault
-- `read_note`: Read the content of a note in the Obsidian vault
-- `create_note`: Create a new note in the Obsidian vault
-- `search_vault`: Search for content in the Obsidian vault
-- `delete_note`: Delete a note from the Obsidian vault
-- `move_note`: Move or rename a note to a new location in the Obsidian vault
-- `manage_folder`: Create, rename, move, or delete a folder in the Obsidian vault
-
 ## Development
 
 - Use `npm run dev` to run the server in development mode
@@ -209,7 +215,7 @@ The MCP server provides the following tools:
 
 ## License
 
-ISC
+MIT
 
 ## Contributing
 

@@ -4,6 +4,12 @@
 
 这个项目实现了一个 Model Context Protocol (MCP) 服务器，用于连接 AI 模型与 Obsidian 知识库。通过这个服务器，AI 模型可以直接访问和操作 Obsidian 笔记，包括读取、创建、更新和删除笔记，以及管理文件夹结构。
 
+Created by huangyihe
+- Prompt House: https://prompthouse.app/
+- YouTube: https://www.youtube.com/@huanyihe777
+- Twitter: https://x.com/huangyihe
+- Community: https://t.zsxq.com/19IaNz5wK
+
 ## 功能特点
 
 - 与 Obsidian 知识库的无缝集成
@@ -11,6 +17,18 @@
 - 支持文件夹的创建、重命名、移动和删除
 - 支持全文搜索功能
 - 符合 Model Context Protocol 规范
+
+## 支持的工具
+
+MCP 服务器提供以下工具：
+
+- `list_notes`: 列出知识库中的所有笔记
+- `read_note`: 读取指定笔记的内容
+- `create_note`: 创建新笔记
+- `search_vault`: 在知识库中搜索内容
+- `delete_note`: 删除笔记
+- `move_note`: 移动或重命名笔记到新位置
+- `manage_folder`: 管理文件夹 (创建、重命名、移动、删除)
 
 ## 前提条件
 
@@ -183,18 +201,6 @@ docker run -d \
 
 ---
 
-## 支持的工具
-
-MCP 服务器提供以下工具：
-
-- `list_notes`: 列出知识库中的所有笔记
-- `read_note`: 读取指定笔记的内容
-- `create_note`: 创建新笔记
-- `search_vault`: 在知识库中搜索内容
-- `delete_note`: 删除笔记
-- `move_note`: 移动或重命名笔记到新位置
-- `manage_folder`: 管理文件夹 (创建、重命名、移动、删除)
-
 ## 测试
 
 项目包含一个测试脚本，用于验证服务器功能：
@@ -210,7 +216,7 @@ node test-mcp.js
 
 ## 许可证
 
-ISC
+MIT
 
 ## 贡献
 
