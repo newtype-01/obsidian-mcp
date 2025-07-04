@@ -1,8 +1,8 @@
-# Obsidian MCP (Model Context Protocol) 服务器
+# Obsidian MCP (Model Context Protocol) Server
 
-[English](./README.en.md) | 中文
+English | [中文](./README.zh.md)
 
-这个项目实现了一个 Model Context Protocol (MCP) 服务器，用于连接 AI 模型与 Obsidian 知识库。通过这个服务器，AI 模型可以直接访问和操作 Obsidian 笔记，包括读取、创建、更新和删除笔记，以及管理文件夹结构。
+This project implements a Model Context Protocol (MCP) server for connecting AI models with Obsidian knowledge bases. Through this server, AI models can directly access and manipulate Obsidian notes, including reading, creating, updating, and deleting notes, as well as managing folder structures.
 
 Created by huangyihe
 - Prompt House: https://prompthouse.app/
@@ -10,69 +10,69 @@ Created by huangyihe
 - Twitter: https://x.com/huangyihe
 - Community: https://t.zsxq.com/19IaNz5wK
 
-## 功能特点
+## Features
 
-- 与 Obsidian 知识库的无缝集成
-- 支持笔记的读取、创建、更新和删除
-- 支持文件夹的创建、重命名、移动和删除
-- 支持全文搜索功能
-- 符合 Model Context Protocol 规范
+- Seamless integration with Obsidian knowledge bases
+- Support for reading, creating, updating, and deleting notes
+- Support for creating, renaming, moving, and deleting folders
+- Full-text search functionality
+- Compliance with the Model Context Protocol specification
 
-## 支持的工具
+## Supported Tools
 
-MCP 服务器提供以下工具：
+The MCP server provides the following tools:
 
-- `list_notes`: 列出知识库中的所有笔记
-- `read_note`: 读取指定笔记的内容
-- `create_note`: 创建新笔记
-- `search_vault`: 在知识库中搜索内容
-- `delete_note`: 删除笔记
-- `move_note`: 移动或重命名笔记到新位置
-- `manage_folder`: 管理文件夹 (创建、重命名、移动、删除)
+- `list_notes`: List all notes in the Obsidian vault
+- `read_note`: Read the content of a note in the Obsidian vault
+- `create_note`: Create a new note in the Obsidian vault
+- `search_vault`: Search for content in the Obsidian vault
+- `delete_note`: Delete a note from the Obsidian vault
+- `move_note`: Move or rename a note to a new location in the Obsidian vault
+- `manage_folder`: Create, rename, move, or delete a folder in the Obsidian vault
 
-## 前提条件
+## Prerequisites
 
-- Node.js (v16 或更高版本)
-- Obsidian 桌面应用
-- Obsidian Local REST API 插件 (需要在 Obsidian 中安装)
+- Node.js (v16 or higher)
+- Obsidian desktop application
+- Obsidian Local REST API plugin (needs to be installed in Obsidian)
 
-## 安装方式选择
+## Installation Options
 
-根据您的技术水平和使用需求，选择最适合的安装方式：
+Choose the most suitable installation method based on your technical level and usage needs:
 
-| 方式 | 适合人群 | 优点 | 缺点 |
-|------|---------|------|------|
-| **🎯 一键安装 (DXT)** | 普通用户 | 最简单，图形界面配置 | 需要支持 DXT 的客户端 |
-| **📦 远程安装 (NPM)** | Node.js 用户 | 自动更新，无需安装 | 需要网络连接 |
-| **🔧 本地部署** | 高级用户 | 离线使用，完全控制 | 需要手动更新 |
-
----
-
-## 方式一：一键安装 (DXT 扩展包) - 推荐
-
-**适合：** 普通用户，想要最简单的安装体验
-
-### 步骤 1: 下载 DXT 文件
-
-下载预构建的扩展包：[obsidian-mcp.dxt](./obsidian-mcp.dxt)
-
-### 步骤 2: 安装并配置
-
-双击下载的 `.dxt` 文件，系统会自动安装扩展。然后在配置界面填入：
-
-- **Vault Path**: 你的 Obsidian 知识库路径 (如: `/Users/username/Documents/MyVault`)
-- **API Token**: Obsidian Local REST API 插件的令牌
-- **API Port**: API 端口号 (默认: `27123`)
+| Method | Target Users | Advantages | Disadvantages |
+|--------|-------------|------------|---------------|
+| **🎯 One-Click Install (DXT)** | General users | Simplest, GUI configuration | Requires DXT-enabled client |
+| **📦 Remote Install (NPM)** | Node.js users | Auto-updates, no installation | Requires network connection |
+| **🔧 Local Deploy** | Advanced users | Offline use, full control | Manual updates required |
 
 ---
 
-## 方式二：远程安装 (NPM 包)
+## Method 1: One-Click Install (DXT Package) - Recommended
 
-**适合：** 熟悉 Node.js 的开发者，想要自动更新和版本管理
+**Suitable for:** General users who want the simplest installation experience
 
-直接在 MCP 客户端配置文件中添加以下配置即可：
+### Step 1: Download DXT File
 
-**使用 npx (推荐，无需预先安装)：**
+Download the pre-built extension package: [obsidian-mcp.dxt](./obsidian-mcp.dxt)
+
+### Step 2: Install and Configure
+
+Double-click the downloaded `.dxt` file and the system will automatically install the extension. Then fill in the configuration interface:
+
+- **Vault Path**: Your Obsidian vault path (e.g., `/Users/username/Documents/MyVault`)
+- **API Token**: Obsidian Local REST API plugin token
+- **API Port**: API port number (default: `27123`)
+
+---
+
+## Method 2: Remote Install (NPM Package)
+
+**Suitable for:** Node.js developers who want automatic updates and version management
+
+Simply add the following configuration to your MCP client config file:
+
+**Using npx (recommended, no pre-installation required):**
 ```json
 {
   "mcpServers": {
@@ -91,22 +91,22 @@ MCP 服务器提供以下工具：
 }
 ```
 
-> **说明**: 第一次运行时会自动下载包，后续运行会使用缓存，确保总是使用最新版本。
+> **Note**: First run will automatically download the package, subsequent runs use cache, ensuring you always use the latest version.
 
 ---
 
-## 方式三：本地部署
+## Method 3: Local Deploy
 
-**适合：** 需要自定义、高级控制或离线使用的用户
+**Suitable for:** Users who need customization, advanced control, or offline usage
 
-### 选项 A: 全局安装 (推荐)
+### Option A: Global Install (Recommended)
 
-**步骤 1: 全局安装**
+**Step 1: Global Install**
 ```bash
 npm install -g @huangyihe/obsidian-mcp
 ```
 
-**步骤 2: MCP 客户端配置**
+**Step 2: MCP Client Configuration**
 ```json
 {
   "mcpServers": {
@@ -122,55 +122,55 @@ npm install -g @huangyihe/obsidian-mcp
 }
 ```
 
-### 选项 B: 源码部署
+### Option B: Source Deploy
 
-**步骤 1: 克隆仓库**
+**Step 1: Clone Repository**
 ```bash
 git clone https://github.com/newtype-01/obsidian-mcp.git
 cd obsidian-mcp
 ```
 
-**步骤 2: 安装依赖**
+**Step 2: Install Dependencies**
 ```bash
 npm install
 ```
 
-**步骤 3: 构建项目**
+**Step 3: Build Project**
 ```bash
 npm run build
 ```
 
-**步骤 4: 配置环境变量**
+**Step 4: Configure Environment Variables**
 ```bash
 cp .env.example .env
-# 编辑 .env 文件，填入您的配置
+# Edit .env file with your configuration
 ```
 
-**步骤 5: 启动服务器**
+**Step 5: Start Server**
 ```bash
 npm start
 ```
 
-### 选项 C: Docker 部署
+### Option C: Docker Deploy
 
-**使用 Docker Compose (推荐)**
+**Using Docker Compose (Recommended)**
 
 ```bash
-# 配置环境变量
+# Configure environment variables
 cp .env.example .env
-# 编辑 .env 文件
+# Edit .env file
 
-# 启动服务
+# Start service
 docker-compose up -d
 ```
 
-**使用 Docker 命令**
+**Using Docker Command**
 
 ```bash
-# 构建镜像
+# Build image
 docker build -t obsidian-mcp .
 
-# 运行容器
+# Run container
 docker run -d \
   --name obsidian-mcp \
   --env-file .env \
@@ -181,48 +181,47 @@ docker run -d \
 
 ---
 
-## 配置说明
+## Configuration Guide
 
-### 环境变量
+### Environment Variables
 
-所有安装方式都需要以下配置：
+All installation methods require the following configuration:
 
-- `OBSIDIAN_VAULT_PATH`: Obsidian 知识库的路径
-- `OBSIDIAN_API_TOKEN`: Obsidian Local REST API 插件的 API 令牌
-- `OBSIDIAN_API_PORT`: Obsidian Local REST API 插件的端口号 (默认为 27123)
+- `OBSIDIAN_VAULT_PATH`: Path to your Obsidian vault
+- `OBSIDIAN_API_TOKEN`: API token for Obsidian Local REST API plugin  
+- `OBSIDIAN_API_PORT`: API port for Obsidian Local REST API (default: 27123)
 
-⚠️ **重要提示**: 对于远程 NPM 安装和全局安装，必须使用 `OBSIDIAN_` 前缀的环境变量。不带前缀的变量如 `VAULT_PATH`、`API_TOKEN` 将无法正常工作。
+⚠️ **Important**: For remote NPM installation and global installation, you MUST use the `OBSIDIAN_` prefix for environment variables. The variables `VAULT_PATH`, `API_TOKEN` without the prefix will not work correctly.
 
-### 获取 API Token
+### Getting API Token
 
-1. 在 Obsidian 中安装 "Local REST API" 插件
-2. 在插件设置中生成 API Token
-3. 记录端口号（默认 27123）
+1. Install "Local REST API" plugin in Obsidian
+2. Generate API Token in plugin settings
+3. Note the port number (default 27123)
 
----
 
-## 测试
+## Testing
 
-项目包含一个测试脚本，用于验证服务器功能：
+The project includes a test script to verify server functionality:
 
 ```bash
 node test-mcp.js
 ```
 
-## 开发
+## Development
 
-- 使用 `npm run dev` 在开发模式下运行服务器
-- 源代码位于 `src` 目录中
+- Use `npm run dev` to run the server in development mode
+- Source code is located in the `src` directory
 
-## 许可证
+## License
 
 MIT
 
-## 贡献
+## Contributing
 
-欢迎提交 Pull Requests 和 Issues！
+Pull Requests and Issues are welcome!
 
-## 相关项目
+## Related Projects
 
 - [Model Context Protocol](https://github.com/anthropics/model-context-protocol)
-- [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api)
+- [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) 
