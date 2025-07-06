@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "obsidian-mcp",
   "display_name": "Obsidian MCP Server",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "MCP server for interacting with Obsidian knowledge bases",
   "long_description": "This MCP server enables AI models to interact with Obsidian knowledge bases through the Model Context Protocol. It provides tools for reading, creating, updating, and deleting notes, as well as managing folder structures and searching vault content.",
   "author": {
@@ -69,6 +69,10 @@
     {
       "name": "read_multiple_notes",
       "description": "Read content from multiple notes simultaneously"
+    },
+    {
+      "name": "auto_backlink_vault",
+      "description": "Automatically add backlinks throughout the entire vault by detecting note names in content and converting them to wikilinks"
     }
   ],
   "user_config": {

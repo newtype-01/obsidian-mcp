@@ -42,6 +42,7 @@ npm test
 - `manage_folder` - CRUD operations for folders (create/rename/move/delete)
 - `update_note` - Update content in existing notes using targeted text replacements
 - `read_multiple_notes` - Read content from multiple notes simultaneously
+- `auto_backlink_vault` - **NEW**: Automatically add backlinks throughout the entire vault by detecting note names in content and converting them to wikilinks
 
 ### Environment Variables:
 - `OBSIDIAN_VAULT_PATH` - Path to the Obsidian vault
@@ -118,8 +119,42 @@ To enable debug mode:
 2. Build and generate debug DXT version
 3. Monitor Claude Desktop logs: `tail -f ~/Library/Logs/Claude/mcp*.log`
 
-## Recent Updates (v1.4.0)
+## Auto Backlink Vault Tool
 
+The `auto_backlink_vault` tool provides intelligent automation for creating backlinks across your entire Obsidian vault. It scans all notes for mentions of other note names and automatically converts them to wikilink format (`[[note name]]`).
+
+### Key Features:
+- **Smart Detection**: Identifies note names in content while avoiding false positives
+- **Batch Processing**: Handles large vaults efficiently with configurable batch sizes
+- **Safe Execution**: Defaults to dry-run mode for previewing changes before applying
+- **Pattern Exclusion**: Skip specific folders or file patterns (e.g., templates, archives)
+- **Intelligent Filtering**: Avoids linking common words and respects existing links
+- **Performance Optimized**: Memory-efficient processing with progress reporting
+
+### Usage Parameters:
+- `dryRun` (default: true) - Preview changes without applying them
+- `excludePatterns` (default: []) - Array of glob patterns to exclude
+- `minLength` (default: 3) - Minimum note name length for linking
+- `caseSensitive` (default: false) - Whether matching is case sensitive
+- `wholeWords` (default: true) - Match only complete words
+- `batchSize` (default: 50) - Notes processed per batch
+
+### Safety Features:
+- Skips code blocks, existing links, and URLs
+- Avoids common English words to prevent over-linking
+- Provides detailed preview before making changes
+- Supports undo through version control integration
+
+## Recent Updates (v1.5.0)
+
+- **🔗 Auto Backlink Vault**: New tool for automated backlink creation across entire vault
+- **🧠 Smart Pattern Matching**: Intelligent detection of note names with false positive prevention
+- **⚡ Batch Processing**: Memory-efficient processing of large vaults
+- **🛡️ Safety First**: Comprehensive dry-run mode and validation
+- **🎯 Precision Linking**: Configurable matching with common word filtering
+- **📊 Detailed Reporting**: Progress tracking and change previews
+
+### Previous Updates (v1.4.0)
 - **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop
 - **🔍 Enhanced Search**: Dual search (filename + content), supports all file types, smart scoring
 - **🚀 Stability Improvements**: Fixed API response parsing, better error handling, streamlined debug output

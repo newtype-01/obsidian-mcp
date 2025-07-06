@@ -97,6 +97,280 @@ function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
+// Helper functions for auto backlink functionality
+interface NoteInfo {
+  path: string;
+  name: string;
+  nameWithoutExt: string;
+}
+
+function buildNoteIndex(filePaths: string[]): NoteInfo[] {
+  const noteIndex: NoteInfo[] = [];
+  
+  for (const filePath of filePaths) {
+    const name = path.basename(filePath);
+    const nameWithoutExt = path.basename(filePath, path.extname(filePath));
+    
+    // Only include markdown files for now
+    if (path.extname(filePath) === '.md') {
+      noteIndex.push({
+        path: filePath,
+        name: name,
+        nameWithoutExt: nameWithoutExt
+      });
+    }
+  }
+  
+  // Sort by name length (descending) to match longer names first
+  return noteIndex.sort((a, b) => b.nameWithoutExt.length - a.nameWithoutExt.length);
+}
+
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: {
+  minLength: number;
+  caseSensitive: boolean;
+  wholeWords: boolean;
+}): { oldText: string; newText: string; notePath: string }[] {
+  const matches: { oldText: string; newText: string; notePath: string }[] = [];
+  
+  if (!content || content.trim().length === 0) {
+    return matches;
+  }
+  
+  let processedContent = content;
+  
+  // Skip content that's already in wikilinks, markdown links, or code blocks
+  const skipPatterns = [
+    /```[\s\S]*?```/g,           // Code blocks
+    /`[^`]*`/g,                  // Inline code
+    /\[\[[^\]]*\]\]/g,           // Existing wikilinks
+    /\[[^\]]*\]\([^)]*\)/g,      // Markdown links
+    /https?:\/\/[^\s]*/g,        // URLs
+    /!\[\[[^\]]*\]\]/g,          // Embedded wikilinks (images, etc)
+  ];
+  
+  // Create a map of regions to skip
+  const skipRegions: { start: number; end: number }[] = [];
+  
+  for (const pattern of skipPatterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      skipRegions.push({ start: match.index, end: match.index + match[0].length });
+    }
+  }
+  
+  // Sort skip regions by start position
+  skipRegions.sort((a, b) => a.start - b.start);
+  
+  // Function to check if a position is in a skip region
+  function isInSkipRegion(start: number, end: number): boolean {
+    return skipRegions.some(region => 
+      (start >= region.start && start < region.end) ||
+      (end > region.start && end <= region.end) ||
+      (start <= region.start && end >= region.end)
+    );
+  }
+  
+  // Process each note in the index
+  for (const note of noteIndex) {
+    if (note.nameWithoutExt.length < options.minLength) {
+      continue;
+    }
+    
+    // Skip very common words to avoid over-linking
+    const commonWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'over', 'after'];
+    if (commonWords.includes(note.nameWithoutExt.toLowerCase())) {
+      continue;
+    }
+    
+    const flags = options.caseSensitive ? 'g' : 'gi';
+    const boundary = options.wholeWords ? '\\b' : '';
+    const escapedName = escapeRegExp(note.nameWithoutExt);
+    
+    try {
+      const regex = new RegExp(`${boundary}${escapedName}${boundary}`, flags);
+      
+      let match;
+      while ((match = regex.exec(processedContent)) !== null) {
+        const matchStart = match.index;
+        const matchEnd = match.index + match[0].length;
+        
+        // Skip if this match is in a skip region
+        if (isInSkipRegion(matchStart, matchEnd)) {
+          continue;
+        }
+        
+        // Check if this text is already a wikilink or part of one
+        const beforeMatch = processedContent.substring(Math.max(0, matchStart - 2), matchStart);
+        const afterMatch = processedContent.substring(matchEnd, Math.min(processedContent.length, matchEnd + 2));
+        
+        if (beforeMatch.includes('[[') || afterMatch.includes(']]')) {
+          continue;
+        }
+        
+        // Additional check for potential false positives
+        // Skip if the match is within a word (for non-word-boundary matches)
+        if (!options.wholeWords) {
+          const charBefore = matchStart > 0 ? processedContent[matchStart - 1] : ' ';
+          const charAfter = matchEnd < processedContent.length ? processedContent[matchEnd] : ' ';
+          
+          if (/\w/.test(charBefore) || /\w/.test(charAfter)) {
+            continue;
+          }
+        }
+        
+        matches.push({
+          oldText: match[0],
+          newText: `[[${note.nameWithoutExt}]]`,
+          notePath: note.path
+        });
+        
+        // Replace the matched text in processedContent to avoid overlapping matches
+        processedContent = processedContent.substring(0, matchStart) + 
+                          `[[${note.nameWithoutExt}]]` + 
+                          processedContent.substring(matchEnd);
+        
+        // Reset regex lastIndex due to content change
+        regex.lastIndex = matchStart + `[[${note.nameWithoutExt}]]`.length;
+      }
+    } catch (error) {
+      console.warn(`Error processing regex for note "${note.nameWithoutExt}": ${error}`);
+      continue;
+    }
+  }
+  
+  return matches;
+}
+
+// Batch processing function for auto backlink
+async function processVaultBacklinks(
+  listVaultFiles: () => Promise<string[]>,
+  readNote: (path: string) => Promise<string>,
+  options: {
+    dryRun: boolean;
+    excludePatterns: string[];
+    minLength: number;
+    caseSensitive: boolean;
+    wholeWords: boolean;
+    batchSize: number;
+  }
+): Promise<{
+  totalNotes: number;
+  processedNotes: number;
+  modifiedNotes: number;
+  totalLinksAdded: number;
+  errors: string[];
+  changes: { path: string; oldText: string; newText: string }[];
+}> {
+  const results = {
+    totalNotes: 0,
+    processedNotes: 0,
+    modifiedNotes: 0,
+    totalLinksAdded: 0,
+    errors: [] as string[],
+    changes: [] as { path: string; oldText: string; newText: string }[]
+  };
+  
+  try {
+    // Start vault processing
+    
+    // Get all notes in the vault
+    const allFiles = await listVaultFiles();
+    // Found files in vault
+    
+    const noteIndex = buildNoteIndex(allFiles);
+    // Built note index
+    
+    // Filter out excluded patterns
+    const filteredNotes = noteIndex.filter(note => {
+      return !options.excludePatterns.some(pattern => {
+        const regex = new RegExp(pattern.replace(/\*/g, '.*'));
+        return regex.test(note.path);
+      });
+    });
+    
+    results.totalNotes = filteredNotes.length;
+    // Filtered notes for processing
+    
+    // Process notes in batches
+    for (let i = 0; i < filteredNotes.length; i += options.batchSize) {
+      // Processing batch
+      // Batch processing range
+      
+      const batch = filteredNotes.slice(i, i + options.batchSize);
+      
+      // Process each note in the batch
+      for (const note of batch) {
+        try {
+          // Processing note
+          const content = await readNote(note.path);
+          // Read note content
+          
+          // Create backlink matches for this note
+          const matches = createBacklinkMatches(content, noteIndex, {
+            minLength: options.minLength,
+            caseSensitive: options.caseSensitive,
+            wholeWords: options.wholeWords
+          });
+          // Found potential matches
+          
+          // Filter out self-references
+          const validMatches = matches.filter(match => match.notePath !== note.path);
+          // Filtered self-references
+          
+          if (validMatches.length > 0) {
+            // Valid matches found
+            results.modifiedNotes++;
+            results.totalLinksAdded += validMatches.length;
+            
+            // Convert matches to edit operations
+            const edits = validMatches.map(match => ({
+              oldText: match.oldText,
+              newText: match.newText
+            }));
+            
+            // Record changes for reporting
+            validMatches.forEach(match => {
+              results.changes.push({
+                path: note.path,
+                oldText: match.oldText,
+                newText: match.newText
+              });
+            });
+            
+            // Apply changes if not dry run
+            if (!options.dryRun) {
+              await applyNoteEdits(note.path, edits);
+            }
+          }
+          
+          results.processedNotes++;
+          
+        } catch (error) {
+          const errorMessage = `Error processing note ${note.path}: ${error instanceof Error ? error.message : String(error)}`;
+          results.errors.push(errorMessage);
+          console.error(errorMessage);
+        }
+      }
+      
+      // Small delay between batches to avoid overwhelming the system
+      if (i + options.batchSize < filteredNotes.length) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+    
+  } catch (error) {
+    const errorMessage = `Error in vault processing: ${error instanceof Error ? error.message : String(error)}`;
+    results.errors.push(errorMessage);
+    console.error(errorMessage);
+  }
+  
+  return results;
+}
+
 function createUnifiedDiff(originalContent: string, newContent: string, filepath: string): string {
   const normalizedOriginal = normalizeLineEndings(originalContent);
   const normalizedNew = normalizeLineEndings(newContent);
@@ -231,6 +505,8 @@ const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
 const TRANSPORT_MODE = CONFIG.transport;
 const HTTP_PORT = parseInt(CONFIG.httpPort);
 const HTTP_HOST = CONFIG.httpHost;
+
+// Configuration loaded
 
 // Validate vault path exists
 if (!fs.existsSync(VAULT_PATH)) {
@@ -511,6 +787,49 @@ class ObsidianMcpServer {
             required: ['paths'],
           },
         },
+        {
+          name: 'auto_backlink_vault',
+          description: 'Automatically add backlinks throughout the entire vault by detecting note names in content and converting them to wikilinks',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              dryRun: {
+                type: 'boolean',
+                description: 'Preview changes without applying them (default: true)',
+                default: true
+              },
+              excludePatterns: {
+                type: 'array',
+                description: 'Array of glob patterns to exclude from processing (e.g., ["template/*", "archive/*"])',
+                items: {
+                  type: 'string'
+                },
+                default: []
+              },
+              minLength: {
+                type: 'number',
+                description: 'Minimum note name length to consider for linking (default: 3)',
+                default: 3
+              },
+              caseSensitive: {
+                type: 'boolean',
+                description: 'Whether matching should be case sensitive (default: false)',
+                default: false
+              },
+              wholeWords: {
+                type: 'boolean',
+                description: 'Whether to match only whole words (default: true)',
+                default: true
+              },
+              batchSize: {
+                type: 'number',
+                description: 'Number of notes to process in each batch (default: 50)',
+                default: 50
+              }
+            },
+            required: [],
+          },
+        },
       ],
     }));
 
@@ -536,6 +855,8 @@ class ObsidianMcpServer {
             return await this.handleUpdateNote(request.params.arguments);
           case 'read_multiple_notes':
             return await this.handleReadMultipleNotes(request.params.arguments);
+          case 'auto_backlink_vault':
+            return await this.handleAutoBacklinkVault(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -774,14 +1095,111 @@ class ObsidianMcpServer {
     };
   }
 
+  // Handler for auto_backlink_vault tool
+  private async handleAutoBacklinkVault(args: any) {
+    // Auto backlink vault processing
+    
+    // Set default values
+    const options = {
+      dryRun: args?.dryRun !== undefined ? args.dryRun : true,
+      excludePatterns: args?.excludePatterns || [],
+      minLength: args?.minLength || 3,
+      caseSensitive: args?.caseSensitive || false,
+      wholeWords: args?.wholeWords !== undefined ? args.wholeWords : true,
+      batchSize: args?.batchSize || 50,
+    };
+    
+    // Process with validated options
+    
+    // Validate options
+    if (!Array.isArray(options.excludePatterns)) {
+      throw new Error('excludePatterns must be an array');
+    }
+    
+    if (typeof options.minLength !== 'number' || options.minLength < 1 || options.minLength > 100) {
+      throw new Error('minLength must be a positive number between 1 and 100');
+    }
+    
+    if (typeof options.batchSize !== 'number' || options.batchSize < 1 || options.batchSize > 500) {
+      throw new Error('batchSize must be a positive number between 1 and 500');
+    }
+    
+    // Safety checks
+    if (!options.dryRun) {
+      console.warn('[WARNING] Auto backlink vault will modify files. Make sure you have backups!');
+    }
+    
+    // Validate exclude patterns
+    for (const pattern of options.excludePatterns) {
+      if (typeof pattern !== 'string') {
+        throw new Error('All exclude patterns must be strings');
+      }
+      try {
+        new RegExp(pattern.replace(/\*/g, '.*'));
+      } catch (error) {
+        throw new Error(`Invalid exclude pattern "${pattern}": ${error}`);
+      }
+    }
+    
+    // Process the vault
+    const results = await processVaultBacklinks(
+      () => this.listVaultFiles(),
+      (path: string) => this.readNote(path),
+      options
+    );
+    
+    // Format the results
+    let output = `Auto Backlink Vault Results:\n`;
+    output += `================================\n`;
+    output += `Total notes: ${results.totalNotes}\n`;
+    output += `Processed notes: ${results.processedNotes}\n`;
+    output += `Modified notes: ${results.modifiedNotes}\n`;
+    output += `Total links added: ${results.totalLinksAdded}\n`;
+    
+    if (results.errors.length > 0) {
+      output += `\nErrors (${results.errors.length}):\n`;
+      results.errors.forEach((error, index) => {
+        output += `${index + 1}. ${error}\n`;
+      });
+    }
+    
+    if (options.dryRun && results.changes.length > 0) {
+      output += `\nPreview of changes (first 10):\n`;
+      const previewChanges = results.changes.slice(0, 10);
+      previewChanges.forEach((change, index) => {
+        output += `${index + 1}. ${change.path}: "${change.oldText}" → "${change.newText}"\n`;
+      });
+      
+      if (results.changes.length > 10) {
+        output += `... and ${results.changes.length - 10} more changes\n`;
+      }
+      
+      output += `\nNote: This was a dry run. No changes were actually made.\n`;
+      output += `To apply these changes, run the tool again with dryRun: false\n`;
+    } else if (!options.dryRun && results.modifiedNotes > 0) {
+      output += `\nChanges have been applied successfully!\n`;
+    }
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
   // Obsidian API methods
   private async listVaultFiles(folder: string = ''): Promise<string[]> {
+    // List vault files
+    
     try {
-      // First try using the Obsidian API
-      const response = await this.api.get('/vault/');
-      const files = response.data.files || [];
-      // Filter to exclude folders (ending with '/') but include all file types
-      return files.filter((file: string) => !file.endsWith('/'));
+      // First try using the Obsidian API - but it doesn't support recursive listing
+      // So we need to manually traverse folders
+      const allFiles = await this.getAllFilesRecursively('');
+      // Files found recursively
+      return allFiles;
     } catch (error) {
       console.warn('API request failed, falling back to file system:', error);
       
@@ -789,6 +1207,50 @@ class ObsidianMcpServer {
       const basePath = path.join(VAULT_PATH, folder);
       return this.listFilesRecursively(basePath);
     }
+  }
+
+  // Recursive API-based file listing
+  private async getAllFilesRecursively(folderPath: string): Promise<string[]> {
+    const allFiles: string[] = [];
+    
+    try {
+      const apiUrl = folderPath ? `/vault/${encodeURIComponent(folderPath)}` : '/vault/';
+      // API call for folder
+      const response = await this.api.get(apiUrl);
+      // API response received
+      
+      const items = response.data.files || [];
+      
+      for (const item of items) {
+        const fullPath = folderPath ? `${folderPath}/${item}` : item;
+        
+        if (item.endsWith('/')) {
+          // It's a folder, recurse into it
+          const folderName = item.slice(0, -1); // Remove trailing '/'
+          const subFolderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
+          // Recurse into subfolder
+          const subFiles = await this.getAllFilesRecursively(subFolderPath);
+          allFiles.push(...subFiles);
+        } else {
+          // It's a file
+          allFiles.push(fullPath);
+          // Found file
+        }
+      }
+    } catch (error) {
+      // API failed for folder
+      // If API fails for a specific folder, try filesystem fallback for that folder
+      try {
+        const basePath = path.join(VAULT_PATH, folderPath);
+        const fallbackFiles = this.listFilesRecursively(basePath);
+        // relativePaths are already calculated correctly in listFilesRecursively
+        allFiles.push(...fallbackFiles);
+      } catch (fsError) {
+        // Filesystem fallback failed
+      }
+    }
+    
+    return allFiles;
   }
 
   private listFilesRecursively(dir: string): string[] {
@@ -857,20 +1319,31 @@ class ObsidianMcpServer {
 
 
   private async searchVault(query: string): Promise<any[]> {
+    // Search vault
+    
     try {
       // First try using the Obsidian API
-      const response = await this.api.get(`/search?query=${encodeURIComponent(query)}`);
+      const apiUrl = `/search?query=${encodeURIComponent(query)}`;
+      // Search API call
+      const response = await this.api.get(apiUrl);
+      // API response received
+      // API data received
       // Check if API returns results directly or wrapped in {results: ...}
-      return response.data.results || response.data || [];
+      const results = response.data.results || response.data || [];
+      // Search results processed
+      return results;
     } catch (error) {
       console.warn('API request failed, falling back to simple search:', error);
       
       // Fallback to simple search if API fails
       const files = await this.listVaultFiles();
+      // Fallback search files
+      // Files list processed
       const results = [];
       
       for (const file of files) {
         try {
+          // Check file for matches
           const lowerQuery = query.toLowerCase();
           const lowerFileName = file.toLowerCase();
           let matchedByName = false;
@@ -879,16 +1352,21 @@ class ObsidianMcpServer {
           // Check if filename contains the query
           if (lowerFileName.includes(lowerQuery)) {
             matchedByName = true;
+            // Filename match found
           }
           
           // Check if content contains the query (only for text files)
           let content = '';
           try {
             content = await this.readNote(file);
+            // Read file content
+            // Content preview processed
             if (typeof content === 'string' && content.toLowerCase().includes(lowerQuery)) {
               matchedByContent = true;
+              // Content match found
             }
           } catch (readError) {
+            // Could not read file for content search
             // For binary files that can't be read as text, only use filename matching
           }
           
@@ -907,9 +1385,13 @@ class ObsidianMcpServer {
                 type: matchType 
               }],
             });
+            
+            // Match found in file
+          } else {
+            // No match found
           }
         } catch (error) {
-          // Skip files that can't be processed
+          // Skip file due to error
         }
       }
       
