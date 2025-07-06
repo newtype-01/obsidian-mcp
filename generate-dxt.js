@@ -4,6 +4,36 @@ import fs from 'fs';
 import path from 'path';
 import archiver from 'archiver';
 
+// 递归添加文件，避免目录条目
+function addFilesRecursively(archive, sourceDir, targetPrefix) {
+  function addFiles(currentDir, currentPrefix) {
+    const items = fs.readdirSync(currentDir);
+    
+    for (const item of items) {
+      const sourcePath = path.join(currentDir, item);
+      const targetPath = path.join(currentPrefix, item).replace(/\\/g, '/');
+      
+      try {
+        const stat = fs.statSync(sourcePath);
+        
+        if (stat.isFile()) {
+          // 只添加文件，不添加目录
+          archive.file(sourcePath, { name: targetPath });
+        } else if (stat.isDirectory()) {
+          // 递归处理子目录，但不添加目录条目本身
+          addFiles(sourcePath, targetPath);
+        }
+      } catch (error) {
+        // 跳过符号链接或无法访问的文件
+        console.log(`跳过文件: ${sourcePath} (${error.code})`);
+        continue;
+      }
+    }
+  }
+  
+  addFiles(sourceDir, targetPrefix);
+}
+
 async function generateDXT() {
   console.log('生成 DXT 文件...');
   
@@ -16,7 +46,8 @@ async function generateDXT() {
   // 创建输出流
   const output = fs.createWriteStream('obsidian-mcp.dxt');
   const archive = archiver('zip', {
-    zlib: { level: 9 } // 最高压缩级别
+    zlib: { level: 9 }, // 最高压缩级别
+    store: false // 禁用目录条目存储
   });
   
   // 监听事件
@@ -59,19 +90,14 @@ async function generateDXT() {
     archive.file('icon.png', { name: 'icon.png' });
   }
   
-  // 添加build目录
-  archive.directory('build/', 'build/');
+  // 递归添加build目录中的所有文件（避免目录条目）
+  console.log('添加build目录...');
+  addFilesRecursively(archive, 'build', 'build');
   
-  // 添加整个node_modules目录（生产构建已经只包含必要依赖）
+  // 递归添加node_modules目录中的所有文件（避免目录条目）
   if (fs.existsSync('node_modules')) {
     console.log('添加node_modules目录...');
-    archive.directory('node_modules/', 'node_modules/');
-  }
-  
-  // 确保node_modules/bin目录和可执行文件被正确添加
-  if (fs.existsSync('node_modules/bin')) {
-    console.log('添加node_modules/bin目录...');
-    archive.directory('node_modules/bin/', 'node_modules/bin/');
+    addFilesRecursively(archive, 'node_modules', 'node_modules');
   }
   
   // 完成压缩
