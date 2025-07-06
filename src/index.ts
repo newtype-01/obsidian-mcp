@@ -220,7 +220,10 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
 
 // Obsidian API configuration
 const CONFIG = parseCliArgs();
-const VAULT_PATH = CONFIG.vaultPath;
+// Ensure vault path is absolute
+const VAULT_PATH = path.isAbsolute(CONFIG.vaultPath) 
+  ? CONFIG.vaultPath 
+  : path.resolve(process.cwd(), CONFIG.vaultPath);
 const API_TOKEN = CONFIG.apiToken;
 const API_PORT = CONFIG.apiPort;
 const API_HOST = CONFIG.apiHost;
@@ -228,19 +231,6 @@ const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
 const TRANSPORT_MODE = CONFIG.transport;
 const HTTP_PORT = parseInt(CONFIG.httpPort);
 const HTTP_HOST = CONFIG.httpHost;
-
-// Debug logging for configuration
-console.error(`[DEBUG] Command line args: ${JSON.stringify(process.argv)}`);
-console.error(`[DEBUG] Environment variables:`);
-console.error(`[DEBUG] - OBSIDIAN_VAULT_PATH: ${process.env.OBSIDIAN_VAULT_PATH || 'NOT SET'}`);
-console.error(`[DEBUG] - OBSIDIAN_API_TOKEN: ${process.env.OBSIDIAN_API_TOKEN ? 'SET' : 'NOT SET'}`);
-console.error(`[DEBUG] - OBSIDIAN_TRANSPORT: ${process.env.OBSIDIAN_TRANSPORT || 'NOT SET'}`);
-console.error(`[DEBUG] Parsed configuration:`);
-console.error(`[DEBUG] - Vault Path: ${VAULT_PATH}`);
-console.error(`[DEBUG] - API Base URL: ${API_BASE_URL}`);
-console.error(`[DEBUG] - API Token: ${API_TOKEN ? API_TOKEN.substring(0, 8) + '...' : 'NOT SET'}`);
-console.error(`[DEBUG] - Transport Mode: ${TRANSPORT_MODE}`);
-console.error(`[DEBUG] - HTTP Server: ${HTTP_HOST}:${HTTP_PORT}`);
 
 // Validate vault path exists
 if (!fs.existsSync(VAULT_PATH)) {
@@ -789,7 +779,9 @@ class ObsidianMcpServer {
     try {
       // First try using the Obsidian API
       const response = await this.api.get('/vault/');
-      return response.data.files || [];
+      const files = response.data.files || [];
+      // Filter to exclude folders (ending with '/') but include all file types
+      return files.filter((file: string) => !file.endsWith('/'));
     } catch (error) {
       console.warn('API request failed, falling back to file system:', error);
       
@@ -814,8 +806,8 @@ class ObsidianMcpServer {
       
       if (stat.isDirectory()) {
         files.push(...this.listFilesRecursively(fullPath));
-      } else if (item.endsWith('.md')) {
-        // Get path relative to vault
+      } else {
+        // Include all file types, not just .md files
         const relativePath = path.relative(VAULT_PATH, fullPath);
         files.push(relativePath);
       }
@@ -828,13 +820,19 @@ class ObsidianMcpServer {
     try {
       // First try using the Obsidian API
       const response = await this.api.get(`/vault/${encodeURIComponent(notePath)}`);
-      return response.data.content || '';
+      // API returns the content directly, not wrapped in {content: ...}
+      return response.data || '';
     } catch (error) {
       console.warn('API request failed, falling back to file system:', error);
       
       // Fallback to file system if API fails
       const fullPath = path.join(VAULT_PATH, notePath);
-      return fs.readFileSync(fullPath, 'utf-8');
+      
+      if (fs.existsSync(fullPath)) {
+        return fs.readFileSync(fullPath, 'utf-8');
+      } else {
+        return '';
+      }
     }
   }
 
@@ -862,7 +860,8 @@ class ObsidianMcpServer {
     try {
       // First try using the Obsidian API
       const response = await this.api.get(`/search?query=${encodeURIComponent(query)}`);
-      return response.data.results || [];
+      // Check if API returns results directly or wrapped in {results: ...}
+      return response.data.results || response.data || [];
     } catch (error) {
       console.warn('API request failed, falling back to simple search:', error);
       
@@ -871,14 +870,46 @@ class ObsidianMcpServer {
       const results = [];
       
       for (const file of files) {
-        const content = await this.readNote(file);
-        
-        if (content.toLowerCase().includes(query.toLowerCase())) {
-          results.push({
-            path: file,
-            score: 1,
-            matches: [{ line: content.split('\n').findIndex(line => line.toLowerCase().includes(query.toLowerCase())) }],
-          });
+        try {
+          const lowerQuery = query.toLowerCase();
+          const lowerFileName = file.toLowerCase();
+          let matchedByName = false;
+          let matchedByContent = false;
+          
+          // Check if filename contains the query
+          if (lowerFileName.includes(lowerQuery)) {
+            matchedByName = true;
+          }
+          
+          // Check if content contains the query (only for text files)
+          let content = '';
+          try {
+            content = await this.readNote(file);
+            if (typeof content === 'string' && content.toLowerCase().includes(lowerQuery)) {
+              matchedByContent = true;
+            }
+          } catch (readError) {
+            // For binary files that can't be read as text, only use filename matching
+          }
+          
+          // Add to results if matched by name or content
+          if (matchedByName || matchedByContent) {
+            const matchType = matchedByName ? 'filename' : 'content';
+            const lineMatch = matchedByContent && typeof content === 'string' 
+              ? content.split('\n').findIndex(line => line.toLowerCase().includes(lowerQuery))
+              : -1;
+              
+            results.push({
+              path: file,
+              score: matchedByName ? 2 : 1, // Higher score for filename matches
+              matches: [{ 
+                line: lineMatch,
+                type: matchType 
+              }],
+            });
+          }
+        } catch (error) {
+          // Skip files that can't be processed
         }
       }
       

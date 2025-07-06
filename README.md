@@ -50,11 +50,9 @@ Choose the most suitable installation method based on your technical level and u
 
 ---
 
-## Method 1: One-Click Install (DXT Package) - ⚠️ Known Issues
+## Method 1: One-Click Install (DXT Package) - ✅ Recommended
 
 **Suitable for:** General users who want the simplest installation experience
-
-> **⚠️ Important Notice**: The DXT installation method currently has known compatibility issues with some Claude Code versions. If you encounter "no such file or directory" errors during installation, please use **Method 2 (NPM Package)** or **Method 3 (Local Deploy)** instead.
 
 ### Step 1: Download DXT File
 
