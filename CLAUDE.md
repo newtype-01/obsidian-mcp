@@ -145,7 +145,9 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - Provides detailed preview before making changes
 - Supports undo through version control integration
 
-## Recent Updates (v1.5.0)
+## Recent Updates (v1.5.0) ✨ RELEASED
+
+### 🔗 Auto Backlink Vault - Major Feature Release
 
 - **🔗 Auto Backlink Vault**: New tool for automated backlink creation across entire vault
 - **🧠 Smart Pattern Matching**: Intelligent detection of note names with false positive prevention
@@ -153,6 +155,11 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - **🛡️ Safety First**: Comprehensive dry-run mode and validation
 - **🎯 Precision Linking**: Configurable matching with common word filtering
 - **📊 Detailed Reporting**: Progress tracking and change previews
+
+**Published**: v1.5.0 is now live on NPM, GitHub, and available as DXT package!
+- 📦 NPM: `npm install -g @huangyihe/obsidian-mcp@1.5.0`
+- 🐙 GitHub: https://github.com/newtype-01/obsidian-mcp/releases/tag/v1.5.0
+- 💾 DXT: Download `obsidian-mcp.dxt` for one-click installation
 
 ### Previous Updates (v1.4.0)
 - **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop
