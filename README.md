@@ -24,7 +24,9 @@ The MCP server provides the following tools:
 
 - `list_notes`: List all notes in the Obsidian vault
 - `read_note`: Read the content of a note in the Obsidian vault
+- `read_multiple_notes`: Read content from multiple notes simultaneously
 - `create_note`: Create a new note in the Obsidian vault
+- `update_note`: Update content in an existing note using targeted text replacements
 - `search_vault`: Search for content in the Obsidian vault
 - `delete_note`: Delete a note from the Obsidian vault
 - `move_note`: Move or rename a note to a new location in the Obsidian vault
@@ -48,9 +50,11 @@ Choose the most suitable installation method based on your technical level and u
 
 ---
 
-## Method 1: One-Click Install (DXT Package) - Recommended
+## Method 1: One-Click Install (DXT Package) - ⚠️ Known Issues
 
 **Suitable for:** General users who want the simplest installation experience
+
+> **⚠️ Important Notice**: The DXT installation method currently has known compatibility issues with some Claude Code versions. If you encounter "no such file or directory" errors during installation, please use **Method 2 (NPM Package)** or **Method 3 (Local Deploy)** instead.
 
 ### Step 1: Download DXT File
 

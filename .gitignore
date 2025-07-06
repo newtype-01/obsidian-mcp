@@ -32,4 +32,7 @@ test-mcp.js
 
 # 临时文件
 tmp/
-temp/ 
+temp/
+
+# 开发中的工作 (WIP)
+dev-wip/ 

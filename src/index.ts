@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
   CallToolRequestSchema,
   ErrorCode,
@@ -12,6 +13,9 @@ import {
 import axios, { AxiosInstance } from 'axios';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { URL } from 'url';
+import { createTwoFilesPatch } from 'diff';
 
 // Parse command line arguments for NPM usage
 function parseCliArgs() {
@@ -23,6 +27,9 @@ function parseCliArgs() {
     apiToken: process.env.OBSIDIAN_API_TOKEN || '',
     apiPort: process.env.OBSIDIAN_API_PORT || '27123',
     apiHost: process.env.OBSIDIAN_API_HOST || '127.0.0.1',
+    transport: process.env.OBSIDIAN_TRANSPORT || 'stdio',
+    httpPort: process.env.OBSIDIAN_HTTP_PORT || '3000',
+    httpHost: process.env.OBSIDIAN_HTTP_HOST || '127.0.0.1',
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -39,6 +46,15 @@ function parseCliArgs() {
     } else if (arg === '--api-host' && i + 1 < args.length) {
       config.apiHost = args[i + 1];
       i++;
+    } else if (arg === '--transport' && i + 1 < args.length) {
+      config.transport = args[i + 1];
+      i++;
+    } else if (arg === '--http-port' && i + 1 < args.length) {
+      config.httpPort = args[i + 1];
+      i++;
+    } else if (arg === '--http-host' && i + 1 < args.length) {
+      config.httpHost = args[i + 1];
+      i++;
     } else if (arg === '--help' || arg === '-h') {
       console.log(`
 Obsidian MCP Server
@@ -50,6 +66,9 @@ Options:
   --api-token <token>   API token for Obsidian Local REST API plugin
   --api-port <port>     API port (default: 27123)
   --api-host <host>     API host (default: 127.0.0.1)
+  --transport <mode>    Transport mode: stdio or http (default: stdio)
+  --http-port <port>    HTTP server port for SSE transport (default: 3000)
+  --http-host <host>    HTTP server host for SSE transport (default: 127.0.0.1)
   --help, -h            Show this help message
 
 Environment variables:
@@ -57,9 +76,13 @@ Environment variables:
   OBSIDIAN_API_TOKEN    API token for Obsidian Local REST API plugin
   OBSIDIAN_API_PORT     API port (default: 27123)
   OBSIDIAN_API_HOST     API host (default: 127.0.0.1)
+  OBSIDIAN_TRANSPORT    Transport mode: stdio or http (default: stdio)
+  OBSIDIAN_HTTP_PORT    HTTP server port for SSE transport (default: 3000)
+  OBSIDIAN_HTTP_HOST    HTTP server host for SSE transport (default: 127.0.0.1)
 
 Examples:
   obsidian-mcp --vault-path "/path/to/vault" --api-token "your-token"
+  obsidian-mcp --transport http --http-port 8080 --vault-path "/path/to/vault"
   OBSIDIAN_VAULT_PATH="/path/to/vault" OBSIDIAN_API_TOKEN="token" obsidian-mcp
 `);
       process.exit(0);
@@ -69,6 +92,132 @@ Examples:
   return config;
 }
 
+// Helper functions for file editing
+function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function createUnifiedDiff(originalContent: string, newContent: string, filepath: string): string {
+  const normalizedOriginal = normalizeLineEndings(originalContent);
+  const normalizedNew = normalizeLineEndings(newContent);
+  
+  return createTwoFilesPatch(
+    filepath,
+    filepath,
+    normalizedOriginal,
+    normalizedNew,
+    'original',
+    'modified'
+  );
+}
+
+interface EditOperation {
+  oldText: string;
+  newText: string;
+}
+
+async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: boolean = false): Promise<string> {
+  const fullPath = path.join(VAULT_PATH, filePath);
+  
+  // Read current file content
+  let content: string;
+  try {
+    content = fs.readFileSync(fullPath, 'utf-8');
+  } catch (error) {
+    throw new Error(`Failed to read file ${filePath}: ${error}`);
+  }
+  
+  const originalContent = content;
+  let modifiedContent = normalizeLineEndings(content);
+  
+  // Apply edits sequentially
+  for (const edit of edits) {
+    const { oldText, newText } = edit;
+    
+    if (oldText === newText) {
+      continue; // Skip if no change
+    }
+    
+    // Try exact match first
+    if (modifiedContent.includes(oldText)) {
+      modifiedContent = modifiedContent.replace(oldText, newText);
+      continue;
+    }
+    
+    // Try flexible line-by-line matching
+    const oldLines = oldText.split('\n');
+    const newLines = newText.split('\n');
+    const contentLines = modifiedContent.split('\n');
+    
+    let matchFound = false;
+    
+    // Find matching sequence of lines
+    for (let i = 0; i <= contentLines.length - oldLines.length; i++) {
+      let isMatch = true;
+      const matchedIndentations: string[] = [];
+      
+      // Check if lines match (ignoring leading/trailing whitespace)
+      for (let j = 0; j < oldLines.length; j++) {
+        const contentLine = contentLines[i + j];
+        const oldLine = oldLines[j];
+        
+        // Extract indentation from content line
+        const indentMatch = contentLine.match(/^(\s*)/);
+        const indentation = indentMatch ? indentMatch[1] : '';
+        matchedIndentations.push(indentation);
+        
+        // Compare trimmed lines
+        if (contentLine.trim() !== oldLine.trim()) {
+          isMatch = false;
+          break;
+        }
+      }
+      
+      if (isMatch) {
+        // Replace the matched lines with new lines, preserving indentation
+        const replacementLines = newLines.map((line, index) => {
+          if (index < matchedIndentations.length) {
+            const originalIndent = matchedIndentations[index];
+            const lineWithoutIndent = line.replace(/^\s*/, '');
+            return originalIndent + lineWithoutIndent;
+          }
+          return line;
+        });
+        
+        // Replace the lines
+        contentLines.splice(i, oldLines.length, ...replacementLines);
+        modifiedContent = contentLines.join('\n');
+        matchFound = true;
+        break;
+      }
+    }
+    
+    if (!matchFound) {
+      throw new Error(`Could not find matching text for edit: "${oldText.substring(0, 50)}..."`);
+    }
+  }
+  
+  if (dryRun) {
+    // Return diff for preview
+    return createUnifiedDiff(originalContent, modifiedContent, filePath);
+  }
+  
+  // Write the modified content atomically
+  const tempFile = fullPath + '.tmp';
+  try {
+    fs.writeFileSync(tempFile, modifiedContent, 'utf-8');
+    fs.renameSync(tempFile, fullPath);
+  } catch (error) {
+    // Clean up temp file if it exists
+    if (fs.existsSync(tempFile)) {
+      fs.unlinkSync(tempFile);
+    }
+    throw new Error(`Failed to write file ${filePath}: ${error}`);
+  }
+  
+  return `File ${filePath} updated successfully`;
+}
+
 // Obsidian API configuration
 const CONFIG = parseCliArgs();
 const VAULT_PATH = CONFIG.vaultPath;
@@ -76,16 +225,22 @@ const API_TOKEN = CONFIG.apiToken;
 const API_PORT = CONFIG.apiPort;
 const API_HOST = CONFIG.apiHost;
 const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
+const TRANSPORT_MODE = CONFIG.transport;
+const HTTP_PORT = parseInt(CONFIG.httpPort);
+const HTTP_HOST = CONFIG.httpHost;
 
 // Debug logging for configuration
 console.error(`[DEBUG] Command line args: ${JSON.stringify(process.argv)}`);
 console.error(`[DEBUG] Environment variables:`);
 console.error(`[DEBUG] - OBSIDIAN_VAULT_PATH: ${process.env.OBSIDIAN_VAULT_PATH || 'NOT SET'}`);
 console.error(`[DEBUG] - OBSIDIAN_API_TOKEN: ${process.env.OBSIDIAN_API_TOKEN ? 'SET' : 'NOT SET'}`);
+console.error(`[DEBUG] - OBSIDIAN_TRANSPORT: ${process.env.OBSIDIAN_TRANSPORT || 'NOT SET'}`);
 console.error(`[DEBUG] Parsed configuration:`);
 console.error(`[DEBUG] - Vault Path: ${VAULT_PATH}`);
 console.error(`[DEBUG] - API Base URL: ${API_BASE_URL}`);
 console.error(`[DEBUG] - API Token: ${API_TOKEN ? API_TOKEN.substring(0, 8) + '...' : 'NOT SET'}`);
+console.error(`[DEBUG] - Transport Mode: ${TRANSPORT_MODE}`);
+console.error(`[DEBUG] - HTTP Server: ${HTTP_HOST}:${HTTP_PORT}`);
 
 // Validate vault path exists
 if (!fs.existsSync(VAULT_PATH)) {
@@ -312,6 +467,60 @@ class ObsidianMcpServer {
             required: ['operation', 'path'],
           },
         },
+        {
+          name: 'update_note',
+          description: 'Update content in an existing note using targeted text replacements',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note within the vault'
+              },
+              edits: {
+                type: 'array',
+                description: 'Array of edit operations to apply',
+                items: {
+                  type: 'object',
+                  properties: {
+                    oldText: {
+                      type: 'string',
+                      description: 'Text to search for and replace (must match exactly)'
+                    },
+                    newText: {
+                      type: 'string',
+                      description: 'Text to replace with'
+                    }
+                  },
+                  required: ['oldText', 'newText']
+                }
+              },
+              dryRun: {
+                type: 'boolean',
+                description: 'Preview changes using git-style diff format without applying them',
+                default: false
+              }
+            },
+            required: ['path', 'edits'],
+          },
+        },
+        {
+          name: 'read_multiple_notes',
+          description: 'Read content from multiple notes simultaneously',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              paths: {
+                type: 'array',
+                description: 'Array of note paths to read',
+                items: {
+                  type: 'string'
+                }
+              }
+            },
+            required: ['paths'],
+          },
+        },
       ],
     }));
 
@@ -333,6 +542,10 @@ class ObsidianMcpServer {
             return await this.handleMoveNote(request.params.arguments);
           case 'manage_folder':
             return await this.handleManageFolder(request.params.arguments);
+          case 'update_note':
+            return await this.handleUpdateNote(request.params.arguments);
+          case 'read_multiple_notes':
+            return await this.handleReadMultipleNotes(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -516,11 +729,66 @@ class ObsidianMcpServer {
     }
   }
 
+  // Handler for update_note tool
+  private async handleUpdateNote(args: any) {
+    if (!args?.path || !args?.edits) {
+      throw new Error('Path and edits are required');
+    }
+    
+    if (!Array.isArray(args.edits)) {
+      throw new Error('Edits must be an array');
+    }
+    
+    const dryRun = args.dryRun || false;
+    const result = await applyNoteEdits(args.path, args.edits, dryRun);
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: result,
+        },
+      ],
+    };
+  }
+
+  // Handler for read_multiple_notes tool
+  private async handleReadMultipleNotes(args: any) {
+    if (!args?.paths) {
+      throw new Error('Paths are required');
+    }
+    
+    if (!Array.isArray(args.paths)) {
+      throw new Error('Paths must be an array');
+    }
+    
+    const results = await Promise.all(
+      args.paths.map(async (notePath: string) => {
+        try {
+          const content = await this.readNote(notePath);
+          return `${notePath}:\n${content}\n`;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          return `${notePath}: Error - ${errorMessage}`;
+        }
+      })
+    );
+    
+    return {
+      content: [
+        {
+          type: 'text',
+          text: results.join('\n---\n'),
+        },
+      ],
+    };
+  }
+
   // Obsidian API methods
   private async listVaultFiles(folder: string = ''): Promise<string[]> {
     try {
       // First try using the Obsidian API
-      const response = await this.api.get('/vault');
+      const response = await this.api.get('/vault/');
       return response.data.files || [];
     } catch (error) {
       console.warn('API request failed, falling back to file system:', error);
@@ -793,10 +1061,102 @@ class ObsidianMcpServer {
 
   // Start the server
   async run() {
+    if (TRANSPORT_MODE === 'http') {
+      await this.startHttpServer();
+    } else {
+      await this.startStdioServer();
+    }
+  }
+
+  private async startStdioServer() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error('Obsidian MCP server running on stdio');
   }
+
+  private async startHttpServer() {
+    const httpServer = createServer();
+    const activeTransports = new Map<string, SSEServerTransport>();
+
+    httpServer.on('request', async (req: IncomingMessage, res: ServerResponse) => {
+      try {
+        const url = new URL(req.url!, `http://${req.headers.host}`);
+        const path = url.pathname;
+        const sessionId = url.searchParams.get('sessionId');
+
+        // CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        if (path === '/sse' && req.method === 'GET') {
+          // Set SSE headers before creating transport
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Connection', 'keep-alive');
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
+          
+          // Handle SSE connection
+          const transport = new SSEServerTransport('/messages', res);
+          await this.server.connect(transport);
+          activeTransports.set(transport.sessionId, transport);
+          
+          console.error(`[INFO] SSE connection established with session ID: ${transport.sessionId}`);
+          
+          // Clean up when connection closes
+          transport.onclose = () => {
+            activeTransports.delete(transport.sessionId);
+            console.error(`[INFO] SSE connection closed for session ID: ${transport.sessionId}`);
+          };
+          
+        } else if (path === '/messages' && req.method === 'POST') {
+          // Handle POST messages
+          if (!sessionId) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Missing sessionId parameter');
+            return;
+          }
+
+          const transport = activeTransports.get(sessionId);
+          if (!transport) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Session not found');
+            return;
+          }
+
+          await transport.handlePostMessage(req, res);
+          
+        } else {
+          // Handle other requests
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not found');
+        }
+      } catch (error) {
+        console.error('HTTP request error:', error);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+      }
+    });
+
+    httpServer.listen(HTTP_PORT, HTTP_HOST, () => {
+      console.error(`[INFO] Obsidian MCP server running on HTTP ${HTTP_HOST}:${HTTP_PORT}`);
+      console.error(`[INFO] SSE endpoint: http://${HTTP_HOST}:${HTTP_PORT}/sse`);
+      console.error(`[INFO] Messages endpoint: http://${HTTP_HOST}:${HTTP_PORT}/messages`);
+    });
+  }
+}
+
+// Validate transport mode
+if (TRANSPORT_MODE !== 'stdio' && TRANSPORT_MODE !== 'http') {
+  console.error(`[ERROR] Invalid transport mode: ${TRANSPORT_MODE}. Must be 'stdio' or 'http'`);
+  process.exit(1);
 }
 
 // Create and run the server

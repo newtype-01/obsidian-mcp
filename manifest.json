@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "obsidian-mcp",
   "display_name": "Obsidian MCP Server",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "description": "MCP server for interacting with Obsidian knowledge bases",
   "long_description": "This MCP server enables AI models to interact with Obsidian knowledge bases through the Model Context Protocol. It provides tools for reading, creating, updating, and deleting notes, as well as managing folder structures and searching vault content.",
   "author": {
@@ -61,6 +61,14 @@
     {
       "name": "manage_folder",
       "description": "Create, rename, move, or delete a folder in the Obsidian vault"
+    },
+    {
+      "name": "update_note",
+      "description": "Update content in an existing note using targeted text replacements"
+    },
+    {
+      "name": "read_multiple_notes",
+      "description": "Read content from multiple notes simultaneously"
     }
   ],
   "user_config": {
