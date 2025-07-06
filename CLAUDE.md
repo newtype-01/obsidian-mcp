@@ -34,12 +34,14 @@ npm test
 
 ### MCP Tools Available:
 - `list_notes` - List all notes in vault (with optional folder filtering)
-- `read_note` - Read specific note content
+- `read_note` - Read specific note content  
 - `create_note` - Create new notes
-- `search_vault` - Full-text search across vault
+- `search_vault` - Smart search across vault (filename + content, all file types)
 - `delete_note` - Delete notes
 - `move_note` - Move/rename notes to new locations (filesystem-level operations, supports all file types including PDF, images, and large files without content copying)
 - `manage_folder` - CRUD operations for folders (create/rename/move/delete)
+- `update_note` - Update content in existing notes using targeted text replacements
+- `read_multiple_notes` - Read content from multiple notes simultaneously
 
 ### Environment Variables:
 - `OBSIDIAN_VAULT_PATH` - Path to the Obsidian vault
@@ -103,13 +105,28 @@ All methods require these configuration values:
 
 The project includes Docker configuration (`Dockerfile` and `docker-compose.yml`) for containerized deployment with proper environment variable handling and volume mounting for vault access.
 
-## Recent Updates (v1.2.5)
+## Debugging
 
-- Removed `update_note` tool due to JSON formatting issues with MCP clients
-- Fixed environment variable configuration: require OBSIDIAN_ prefix for NPM/global installation
-- Updated all installation methods with corrected parameter formats
-- Enhanced documentation across README files
-- Improved DXT package with latest functionality
+For troubleshooting DXT issues, detailed debug code is available in `debug-code.md`. The debug version adds extensive logging to:
+- API request/response details
+- File path resolution  
+- Search matching logic
+- Error handling flows
+
+To enable debug mode:
+1. Copy debug code from `debug-code.md` to appropriate locations in `src/index.ts`
+2. Build and generate debug DXT version
+3. Monitor Claude Desktop logs: `tail -f ~/Library/Logs/Claude/mcp*.log`
+
+## Recent Updates (v1.4.0)
+
+- **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop
+- **🔍 Enhanced Search**: Dual search (filename + content), supports all file types, smart scoring
+- **🚀 Stability Improvements**: Fixed API response parsing, better error handling, streamlined debug output
+- **📚 Documentation**: Updated README files to reflect stable DXT support, removed compatibility warnings
+- **🔧 File Type Support**: Now supports all file types (PDF, images, documents) not just .md files
+- **⚡ Performance**: Optimized search with filename matching priority and binary file support
+- **🛠️ New Tools**: Restored `update_note` and added `read_multiple_notes` tools
 
 ## Memories
 

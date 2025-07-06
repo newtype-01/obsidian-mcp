@@ -35,4 +35,9 @@ tmp/
 temp/
 
 # 开发中的工作 (WIP)
-dev-wip/ 
+dev-wip/
+
+# Claude Code 私有文件
+.claude/
+claude.md
+**/claude.md 
