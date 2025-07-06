@@ -31,6 +31,7 @@ The MCP server provides the following tools:
 - `delete_note`: Delete a note from the Obsidian vault
 - `move_note`: Move or rename a note to a new location in the Obsidian vault
 - `manage_folder`: Create, rename, move, or delete a folder in the Obsidian vault
+- `auto_backlink_vault`: 🔗 **Auto Backlink** - Scan the entire vault and intelligently detect note names, automatically converting them to wikilink format (`[[note name]]`)
 
 ## Prerequisites
 

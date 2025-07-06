@@ -31,6 +31,7 @@ MCP 服务器提供以下工具：
 - `delete_note`: 删除笔记
 - `move_note`: 移动或重命名笔记到新位置
 - `manage_folder`: 管理文件夹 (创建、重命名、移动、删除)
+- `auto_backlink_vault`: 🔗 **自动反向链接** - 扫描整个知识库，智能检测笔记名称并自动转换为 wikilink 格式 (`[[笔记名]]`)
 
 ## 前提条件
 
