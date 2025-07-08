@@ -2,9 +2,9 @@
   "dxt_version": "0.1",
   "name": "obsidian-mcp",
   "display_name": "Obsidian MCP Server",
-  "version": "1.5.0",
-  "description": "MCP server for interacting with Obsidian knowledge bases",
-  "long_description": "This MCP server enables AI models to interact with Obsidian knowledge bases through the Model Context Protocol. It provides tools for reading, creating, updating, and deleting notes, as well as managing folder structures and searching vault content.",
+  "version": "1.6.0",
+  "description": "MCP server for interacting with Obsidian knowledge bases with advanced PATCH insertion capabilities",
+  "long_description": "This MCP server enables AI models to interact with Obsidian knowledge bases through the Model Context Protocol. NEW in v1.6.0: Enhanced update_note tool with PATCH precision insertion - insert content at specific headings, block IDs, with 4 position modes (before/after/append/prepend) and smart heading level targeting. Features dual API strategy with Obsidian REST API integration and filesystem fallback.",
   "author": {
     "name": "Obsidian MCP Team",
     "email": "support@obsidian-mcp.com"
@@ -64,7 +64,7 @@
     },
     {
       "name": "update_note",
-      "description": "Update content in an existing note using targeted text replacements"
+      "description": "Update content in an existing note using text replacements or precise insertions at specific headings/blocks with 4 position modes"
     },
     {
       "name": "read_multiple_notes",

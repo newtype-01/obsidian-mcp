@@ -386,8 +386,446 @@ function createUnifiedDiff(originalContent: string, newContent: string, filepath
 }
 
 interface EditOperation {
-  oldText: string;
-  newText: string;
+  // 原有的替换模式
+  oldText?: string;
+  newText?: string;
+  
+  // 新增的插入模式
+  mode?: 'replace' | 'insert';
+  heading?: string;        // 目标标题
+  content?: string;        // 要插入的内容
+  position?: 'before' | 'after' | 'append' | 'prepend';
+  level?: number;          // 标题级别 (1-6)
+  blockId?: string;        // 块ID引用
+}
+
+// Markdown 元素结构
+interface MarkdownElement {
+  type: 'heading' | 'paragraph' | 'list' | 'code' | 'block';
+  level?: number;          // 标题级别
+  content: string;         // 内容
+  startLine: number;       // 开始行号
+  endLine: number;         // 结束行号
+  blockId?: string;        // 块ID
+}
+
+// 解析 Markdown 内容
+function parseMarkdown(content: string): MarkdownElement[] {
+  const lines = content.split('\n');
+  const elements: MarkdownElement[] = [];
+  let currentElement: MarkdownElement | null = null;
+  let inCodeBlock = false;
+  let codeBlockFence = '';
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmedLine = line.trim();
+    
+    // 检查代码块
+    if (trimmedLine.startsWith('```') || trimmedLine.startsWith('~~~')) {
+      if (!inCodeBlock) {
+        // 开始代码块
+        inCodeBlock = true;
+        codeBlockFence = trimmedLine.substring(0, 3);
+        currentElement = {
+          type: 'code',
+          content: line,
+          startLine: i,
+          endLine: i
+        };
+      } else if (trimmedLine.startsWith(codeBlockFence)) {
+        // 结束代码块
+        inCodeBlock = false;
+        if (currentElement) {
+          currentElement.content += '\n' + line;
+          currentElement.endLine = i;
+          elements.push(currentElement);
+          currentElement = null;
+        }
+      } else if (currentElement) {
+        // 代码块内容
+        currentElement.content += '\n' + line;
+      }
+      continue;
+    }
+    
+    // 在代码块内，跳过其他处理
+    if (inCodeBlock) {
+      if (currentElement) {
+        currentElement.content += '\n' + line;
+      }
+      continue;
+    }
+    
+    // 检查标题
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      // 完成之前的元素
+      if (currentElement) {
+        currentElement.endLine = i - 1;
+        elements.push(currentElement);
+      }
+      
+      // 检查块ID
+      const blockIdMatch = headingMatch[2].match(/^(.+?)\s*\^([a-zA-Z0-9-_]+)$/);
+      const headingText = blockIdMatch ? blockIdMatch[1].trim() : headingMatch[2].trim();
+      const blockId = blockIdMatch ? blockIdMatch[2] : undefined;
+      
+      currentElement = {
+        type: 'heading',
+        level: headingMatch[1].length,
+        content: headingText,
+        startLine: i,
+        endLine: i,
+        blockId: blockId
+      };
+      elements.push(currentElement);
+      currentElement = null;
+      continue;
+    }
+    
+    // 检查块ID（独立的块ID）
+    const blockIdMatch = line.match(/^\s*\^([a-zA-Z0-9-_]+)\s*$/);
+    if (blockIdMatch) {
+      // 如果前面有段落，给它添加块ID
+      if (elements.length > 0) {
+        const lastElement = elements[elements.length - 1];
+        if (lastElement.type === 'paragraph' && !lastElement.blockId) {
+          lastElement.blockId = blockIdMatch[1];
+          lastElement.endLine = i;
+        }
+      }
+      continue;
+    }
+    
+    // 检查列表项
+    const listMatch = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+    if (listMatch) {
+      if (currentElement?.type !== 'list') {
+        // 完成之前的元素
+        if (currentElement) {
+          currentElement.endLine = i - 1;
+          elements.push(currentElement);
+        }
+        
+        // 开始新的列表
+        currentElement = {
+          type: 'list',
+          content: line,
+          startLine: i,
+          endLine: i
+        };
+      } else {
+        // 继续列表
+        currentElement.content += '\n' + line;
+        currentElement.endLine = i;
+      }
+      continue;
+    }
+    
+    // 空行处理
+    if (trimmedLine === '') {
+      if (currentElement) {
+        currentElement.endLine = i - 1;
+        elements.push(currentElement);
+        currentElement = null;
+      }
+      continue;
+    }
+    
+    // 段落处理
+    if (currentElement?.type === 'paragraph') {
+      currentElement.content += '\n' + line;
+      currentElement.endLine = i;
+    } else {
+      // 完成之前的元素
+      if (currentElement) {
+        currentElement.endLine = i - 1;
+        elements.push(currentElement);
+      }
+      
+      // 开始新段落
+      currentElement = {
+        type: 'paragraph',
+        content: line,
+        startLine: i,
+        endLine: i
+      };
+    }
+  }
+  
+  // 完成最后的元素
+  if (currentElement) {
+    currentElement.endLine = lines.length - 1;
+    elements.push(currentElement);
+  }
+  
+  return elements;
+}
+
+// 查找标题位置
+function findHeadingPosition(
+  elements: MarkdownElement[], 
+  heading: string, 
+  level?: number
+): { index: number; element: MarkdownElement } | null {
+  const lowerHeading = heading.toLowerCase().trim();
+  
+  // 先尝试精确匹配
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.type === 'heading') {
+      // 级别过滤
+      if (level && element.level !== level) {
+        continue;
+      }
+      
+      // 精确匹配
+      if (element.content.toLowerCase().trim() === lowerHeading) {
+        return { index: i, element };
+      }
+    }
+  }
+  
+  // 如果精确匹配失败，尝试模糊匹配
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.type === 'heading') {
+      // 级别过滤
+      if (level && element.level !== level) {
+        continue;
+      }
+      
+      // 包含匹配
+      if (element.content.toLowerCase().includes(lowerHeading)) {
+        return { index: i, element };
+      }
+    }
+  }
+  
+  // 最后尝试更宽松的匹配（移除特殊字符）
+  const normalizedHeading = lowerHeading.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.type === 'heading') {
+      // 级别过滤
+      if (level && element.level !== level) {
+        continue;
+      }
+      
+      // 标准化后匹配
+      const normalizedContent = element.content.toLowerCase()
+        .replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+      if (normalizedContent.includes(normalizedHeading)) {
+        return { index: i, element };
+      }
+    }
+  }
+  
+  return null;
+}
+
+// 查找块ID位置
+function findBlockIdPosition(
+  elements: MarkdownElement[], 
+  blockId: string
+): { index: number; element: MarkdownElement } | null {
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.blockId === blockId) {
+      return { index: i, element };
+    }
+  }
+  return null;
+}
+
+// 计算插入位置
+function calculateInsertPosition(
+  elements: MarkdownElement[],
+  targetIndex: number,
+  position: 'before' | 'after' | 'append' | 'prepend'
+): number {
+  const targetElement = elements[targetIndex];
+  
+  switch (position) {
+    case 'before':
+      return targetElement.startLine;
+    
+    case 'after':
+      return targetElement.endLine + 1;
+    
+    case 'prepend':
+      // 在标题下的第一行插入
+      if (targetElement.type === 'heading') {
+        return targetElement.endLine + 1;
+      }
+      return targetElement.startLine;
+    
+    case 'append':
+      // 在标题对应章节的末尾插入
+      if (targetElement.type === 'heading') {
+        return findSectionEnd(elements, targetIndex);
+      }
+      return targetElement.endLine + 1;
+    
+    default:
+      return targetElement.endLine + 1;
+  }
+}
+
+// 查找章节结束位置
+function findSectionEnd(elements: MarkdownElement[], headingIndex: number): number {
+  const headingElement = elements[headingIndex];
+  if (headingElement.type !== 'heading') {
+    return headingElement.endLine + 1;
+  }
+  
+  const headingLevel = headingElement.level!;
+  
+  // 查找下一个同级或更高级的标题
+  for (let i = headingIndex + 1; i < elements.length; i++) {
+    const element = elements[i];
+    if (element.type === 'heading' && element.level! <= headingLevel) {
+      // 找到下一个同级或更高级标题，在它前面插入
+      return element.startLine;
+    }
+  }
+  
+  // 如果没找到，说明是最后一个章节，在文档末尾插入
+  return elements.length > 0 ? elements[elements.length - 1].endLine + 1 : 0;
+}
+
+// 插入内容到指定行
+function insertContentAtLine(
+  lines: string[],
+  targetLine: number,
+  content: string
+): string[] {
+  const newLines = content.split('\n');
+  const result = [...lines];
+  
+  // 确保插入位置有效
+  const insertIndex = Math.max(0, Math.min(targetLine, lines.length));
+  
+  // 在指定位置插入新内容
+  result.splice(insertIndex, 0, ...newLines);
+  
+  return result;
+}
+
+// 自定义错误类
+class InsertError extends Error {
+  constructor(
+    message: string,
+    public readonly operation: string,
+    public readonly target: string
+  ) {
+    super(`${operation} failed: ${message} (target: ${target})`);
+    this.name = 'InsertError';
+  }
+}
+
+// 验证编辑操作
+function validateEditOperation(edit: EditOperation): string[] {
+  const errors: string[] = [];
+  
+  const mode = edit.mode || 'replace';
+  
+  if (mode === 'replace') {
+    // 替换模式验证
+    if (!edit.oldText) {
+      errors.push('Replace mode requires oldText');
+    }
+    if (!edit.newText) {
+      errors.push('Replace mode requires newText');
+    }
+  } else if (mode === 'insert') {
+    // 插入模式验证
+    if (!edit.heading && !edit.blockId) {
+      errors.push('Insert mode requires either heading or blockId');
+    }
+    if (edit.heading && edit.blockId) {
+      errors.push('Insert mode cannot have both heading and blockId');
+    }
+    if (!edit.content) {
+      errors.push('Insert mode requires content');
+    }
+    if (edit.level && (edit.level < 1 || edit.level > 6)) {
+      errors.push('Heading level must be between 1 and 6');
+    }
+    if (edit.position && !['before', 'after', 'append', 'prepend'].includes(edit.position)) {
+      errors.push('Position must be one of: before, after, append, prepend');
+    }
+  } else {
+    errors.push(`Unknown mode: ${mode}`);
+  }
+  
+  return errors;
+}
+
+// 处理插入操作
+function handleInsertEdit(
+  lines: string[], 
+  elements: MarkdownElement[], 
+  edit: EditOperation
+): string[] {
+  // 验证操作
+  const validationErrors = validateEditOperation(edit);
+  if (validationErrors.length > 0) {
+    throw new InsertError(
+      validationErrors.join('; '),
+      'validation',
+      edit.heading || edit.blockId || 'unknown'
+    );
+  }
+  
+  let targetIndex = -1;
+  let targetElement: MarkdownElement | null = null;
+  
+  try {
+    if (edit.heading) {
+      // 标题插入模式
+      const headingResult = findHeadingPosition(elements, edit.heading, edit.level);
+      if (!headingResult) {
+        throw new InsertError(
+          `Heading not found: ${edit.heading}${edit.level ? ` (level ${edit.level})` : ''}`,
+          'heading_search',
+          edit.heading
+        );
+      }
+      targetIndex = headingResult.index;
+      targetElement = headingResult.element;
+      
+    } else if (edit.blockId) {
+      // 块插入模式
+      const blockResult = findBlockIdPosition(elements, edit.blockId);
+      if (!blockResult) {
+        throw new InsertError(
+          `Block ID not found: ${edit.blockId}`,
+          'block_search',
+          edit.blockId
+        );
+      }
+      targetIndex = blockResult.index;
+      targetElement = blockResult.element;
+    }
+    
+    // 计算插入位置
+    const insertLine = calculateInsertPosition(elements, targetIndex, edit.position || 'after');
+    
+    // 插入内容
+    return insertContentAtLine(lines, insertLine, edit.content || '');
+    
+  } catch (error) {
+    if (error instanceof InsertError) {
+      throw error;
+    }
+    throw new InsertError(
+      error instanceof Error ? error.message : String(error),
+      'insert_operation',
+      edit.heading || edit.blockId || 'unknown'
+    );
+  }
 }
 
 async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: boolean = false): Promise<string> {
@@ -404,70 +842,109 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
   const originalContent = content;
   let modifiedContent = normalizeLineEndings(content);
   
+  // Parse markdown structure for insert operations
+  const elements = parseMarkdown(modifiedContent);
+  let lines = modifiedContent.split('\n');
+  
   // Apply edits sequentially
   for (const edit of edits) {
-    const { oldText, newText } = edit;
+    // 向后兼容：如果没有mode字段但有oldText和newText，默认为replace模式
+    const mode = edit.mode || (edit.oldText && edit.newText ? 'replace' : 'insert');
     
-    if (oldText === newText) {
-      continue; // Skip if no change
+    // 验证编辑操作
+    const validationErrors = validateEditOperation({ ...edit, mode });
+    if (validationErrors.length > 0) {
+      throw new Error(`Invalid edit operation: ${validationErrors.join('; ')}`);
     }
     
-    // Try exact match first
-    if (modifiedContent.includes(oldText)) {
-      modifiedContent = modifiedContent.replace(oldText, newText);
-      continue;
-    }
-    
-    // Try flexible line-by-line matching
-    const oldLines = oldText.split('\n');
-    const newLines = newText.split('\n');
-    const contentLines = modifiedContent.split('\n');
-    
-    let matchFound = false;
-    
-    // Find matching sequence of lines
-    for (let i = 0; i <= contentLines.length - oldLines.length; i++) {
-      let isMatch = true;
-      const matchedIndentations: string[] = [];
+    if (mode === 'insert') {
+      // Handle insert mode
+      try {
+        lines = handleInsertEdit(lines, elements, edit);
+        modifiedContent = lines.join('\n');
+        // Re-parse elements after modification for subsequent edits
+        elements.length = 0;
+        elements.push(...parseMarkdown(modifiedContent));
+      } catch (error) {
+        if (error instanceof InsertError) {
+          throw new Error(`Insert operation failed: ${error.message}`);
+        }
+        throw new Error(`Insert operation failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else {
+      // Handle replace mode (original logic)
+      const { oldText, newText } = edit;
       
-      // Check if lines match (ignoring leading/trailing whitespace)
-      for (let j = 0; j < oldLines.length; j++) {
-        const contentLine = contentLines[i + j];
-        const oldLine = oldLines[j];
+      if (!oldText || !newText) {
+        throw new Error('Replace mode requires both oldText and newText');
+      }
+      
+      if (oldText === newText) {
+        continue; // Skip if no change
+      }
+      
+      // Try exact match first
+      if (modifiedContent.includes(oldText)) {
+        modifiedContent = modifiedContent.replace(oldText, newText);
+        lines = modifiedContent.split('\n');
+        // Re-parse elements after modification
+        elements.length = 0;
+        elements.push(...parseMarkdown(modifiedContent));
+        continue;
+      }
+      
+      // Try flexible line-by-line matching
+      const oldLines = oldText.split('\n');
+      const newLines = newText.split('\n');
+      let matchFound = false;
+      
+      // Find matching sequence of lines
+      for (let i = 0; i <= lines.length - oldLines.length; i++) {
+        let isMatch = true;
+        const matchedIndentations: string[] = [];
         
-        // Extract indentation from content line
-        const indentMatch = contentLine.match(/^(\s*)/);
-        const indentation = indentMatch ? indentMatch[1] : '';
-        matchedIndentations.push(indentation);
+        // Check if lines match (ignoring leading/trailing whitespace)
+        for (let j = 0; j < oldLines.length; j++) {
+          const contentLine = lines[i + j];
+          const oldLine = oldLines[j];
+          
+          // Extract indentation from content line
+          const indentMatch = contentLine.match(/^(\s*)/);
+          const indentation = indentMatch ? indentMatch[1] : '';
+          matchedIndentations.push(indentation);
+          
+          // Compare trimmed lines
+          if (contentLine.trim() !== oldLine.trim()) {
+            isMatch = false;
+            break;
+          }
+        }
         
-        // Compare trimmed lines
-        if (contentLine.trim() !== oldLine.trim()) {
-          isMatch = false;
+        if (isMatch) {
+          // Replace the matched lines with new lines, preserving indentation
+          const replacementLines = newLines.map((line, index) => {
+            if (index < matchedIndentations.length) {
+              const originalIndent = matchedIndentations[index];
+              const lineWithoutIndent = line.replace(/^\s*/, '');
+              return originalIndent + lineWithoutIndent;
+            }
+            return line;
+          });
+          
+          // Replace the lines
+          lines.splice(i, oldLines.length, ...replacementLines);
+          modifiedContent = lines.join('\n');
+          matchFound = true;
+          // Re-parse elements after modification
+          elements.length = 0;
+          elements.push(...parseMarkdown(modifiedContent));
           break;
         }
       }
       
-      if (isMatch) {
-        // Replace the matched lines with new lines, preserving indentation
-        const replacementLines = newLines.map((line, index) => {
-          if (index < matchedIndentations.length) {
-            const originalIndent = matchedIndentations[index];
-            const lineWithoutIndent = line.replace(/^\s*/, '');
-            return originalIndent + lineWithoutIndent;
-          }
-          return line;
-        });
-        
-        // Replace the lines
-        contentLines.splice(i, oldLines.length, ...replacementLines);
-        modifiedContent = contentLines.join('\n');
-        matchFound = true;
-        break;
+      if (!matchFound) {
+        throw new Error(`Could not find matching text for edit: "${oldText.substring(0, 50)}..."`);
       }
-    }
-    
-    if (!matchFound) {
-      throw new Error(`Could not find matching text for edit: "${oldText.substring(0, 50)}..."`);
     }
   }
   
@@ -735,7 +1212,7 @@ class ObsidianMcpServer {
         },
         {
           name: 'update_note',
-          description: 'Update content in an existing note using targeted text replacements',
+          description: 'Update content in an existing note using text replacements or precise insertions',
           inputSchema: {
             type: 'object',
             properties: {
@@ -749,21 +1226,58 @@ class ObsidianMcpServer {
                 items: {
                   type: 'object',
                   properties: {
+                    // 替换模式 (向后兼容)
                     oldText: {
                       type: 'string',
-                      description: 'Text to search for and replace (must match exactly)'
+                      description: 'Text to search for and replace (for replace mode)'
                     },
                     newText: {
                       type: 'string',
-                      description: 'Text to replace with'
+                      description: 'Text to replace with (for replace mode)'
+                    },
+                    
+                    // 插入模式
+                    mode: {
+                      type: 'string',
+                      enum: ['replace', 'insert'],
+                      description: 'Edit mode: replace (default) or insert',
+                      default: 'replace'
+                    },
+                    heading: {
+                      type: 'string',
+                      description: 'Target heading for insert mode'
+                    },
+                    content: {
+                      type: 'string',
+                      description: 'Content to insert (for insert mode)'
+                    },
+                    position: {
+                      type: 'string',
+                      enum: ['before', 'after', 'append', 'prepend'],
+                      description: 'Where to insert relative to heading: before (above heading), after (below heading), append (end of section), prepend (start of section)',
+                      default: 'after'
+                    },
+                    level: {
+                      type: 'number',
+                      minimum: 1,
+                      maximum: 6,
+                      description: 'Heading level (1-6) for more precise targeting'
+                    },
+                    blockId: {
+                      type: 'string',
+                      description: 'Block ID for block-based insertion (^block-id)'
                     }
                   },
-                  required: ['oldText', 'newText']
+                  anyOf: [
+                    { required: ['oldText', 'newText'] },     // 替换模式
+                    { required: ['mode', 'heading', 'content'] }, // 标题插入
+                    { required: ['mode', 'blockId', 'content'] }   // 块插入
+                  ]
                 }
               },
               dryRun: {
                 type: 'boolean',
-                description: 'Preview changes using git-style diff format without applying them',
+                description: 'Preview changes without applying them',
                 default: false
               }
             },
@@ -1051,7 +1565,58 @@ class ObsidianMcpServer {
     }
     
     const dryRun = args.dryRun || false;
-    const result = await applyNoteEdits(args.path, args.edits, dryRun);
+    const notePath = args.path;
+    const edits = args.edits;
+    
+    // 尝试使用 Obsidian API 进行插入操作，如果失败则回退到文件系统
+    let apiResults: string[] = [];
+    let fallbackEdits: EditOperation[] = [];
+    
+    for (const edit of edits) {
+      const mode = edit.mode || 'replace';
+      
+      if (mode === 'insert' && !dryRun) {
+        try {
+          // 尝试使用 Obsidian API
+          if (edit.heading) {
+            await this.patchNoteViaAPI(notePath, edit.heading, edit.content || '', edit.position || 'after');
+            apiResults.push(`API: Inserted content ${edit.position || 'after'} heading "${edit.heading}"`);
+          } else if (edit.blockId) {
+            await this.patchNoteViaBlockAPI(notePath, edit.blockId, edit.content || '', edit.position || 'after');
+            apiResults.push(`API: Inserted content ${edit.position || 'after'} block "${edit.blockId}"`);
+          } else {
+            // 无效的插入操作，添加到回退列表
+            fallbackEdits.push(edit);
+          }
+        } catch (error) {
+          // API 失败，添加到回退列表
+          console.warn(`API PATCH failed for edit, falling back to filesystem: ${error}`);
+          fallbackEdits.push(edit);
+        }
+      } else {
+        // 替换模式或干运行，添加到回退列表
+        fallbackEdits.push(edit);
+      }
+    }
+    
+    // 如果有回退操作，使用文件系统方法
+    let filesystemResult = '';
+    if (fallbackEdits.length > 0) {
+      filesystemResult = await applyNoteEdits(notePath, fallbackEdits, dryRun);
+    }
+    
+    // 合并结果
+    let result = '';
+    if (apiResults.length > 0) {
+      result += 'Obsidian API operations:\n' + apiResults.join('\n') + '\n\n';
+    }
+    if (filesystemResult) {
+      result += fallbackEdits.length === edits.length ? filesystemResult : 
+                `Filesystem operations:\n${filesystemResult}`;
+    }
+    if (!result) {
+      result = `File ${notePath} updated successfully`;
+    }
     
     return {
       content: [
@@ -1423,6 +1988,50 @@ class ObsidianMcpServer {
           fs.rmdirSync(dir);
         }
       }
+    }
+  }
+
+  // PATCH 端点集成：使用 Obsidian API 进行精确插入
+  private async patchNoteViaAPI(
+    notePath: string, 
+    heading: string, 
+    content: string, 
+    position: string
+  ): Promise<void> {
+    try {
+      // 尝试使用 Obsidian Local REST API 的 PATCH 端点
+      await this.api.patch(`/vault/${encodeURIComponent(notePath)}`, {
+        heading: heading,
+        content: content,
+        insertionMode: position === 'append' ? 'append' : 
+                      position === 'prepend' ? 'prepend' : 
+                      position === 'before' ? 'before' : 'after'
+      });
+    } catch (error) {
+      // API 不支持或失败，抛出错误让调用者回退到文件系统操作
+      throw new Error(`PATCH API failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // 基于块ID的 PATCH 操作
+  private async patchNoteViaBlockAPI(
+    notePath: string, 
+    blockId: string, 
+    content: string, 
+    position: string
+  ): Promise<void> {
+    try {
+      // 尝试使用 Obsidian Local REST API 的块级 PATCH 端点
+      await this.api.patch(`/vault/${encodeURIComponent(notePath)}`, {
+        blockId: blockId,
+        content: content,
+        insertionMode: position === 'append' ? 'append' : 
+                      position === 'prepend' ? 'prepend' : 
+                      position === 'before' ? 'before' : 'after'
+      });
+    } catch (error) {
+      // API 不支持或失败，抛出错误让调用者回退到文件系统操作
+      throw new Error(`Block PATCH API failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

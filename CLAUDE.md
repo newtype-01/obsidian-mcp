@@ -145,9 +145,25 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - Provides detailed preview before making changes
 - Supports undo through version control integration
 
-## Recent Updates (v1.5.0) ✨ RELEASED
+## Recent Updates (v1.6.0) 🚀 NEW RELEASE
 
-### 🔗 Auto Backlink Vault - Major Feature Release
+### 🎯 PATCH 精确插入 - 革命性功能发布
+
+- **🎯 PATCH 精确插入**: 全新的 update_note 工具支持基于标题和块ID的精确内容插入
+- **📍 4种插入位置**: before, after, append, prepend - 灵活的内容定位
+- **🎯 智能标题定位**: 支持 1-6 级标题精确匹配和模糊搜索
+- **🔗 块ID引用支持**: 完整支持 `^block-id` 格式的块引用
+- **🌐 双重API策略**: 优先使用 Obsidian Local REST API PATCH 端点，自动回退到文件系统
+- **🔄 向后兼容**: 100% 保持原有替换模式功能
+- **🛡️ 智能验证**: 完整的参数验证和详细错误处理
+- **⚡ 高性能**: 优化的 Markdown 解析和批量操作支持
+
+**Published**: v1.6.0 is now live on NPM, GitHub, and available as DXT package!
+- 📦 NPM: `npm install -g @huangyihe/obsidian-mcp@1.6.0`
+- 🐙 GitHub: https://github.com/newtype-01/obsidian-mcp/releases/tag/v1.6.0  
+- 💾 DXT: Download `obsidian-mcp.dxt` for one-click installation
+
+### Previous Updates (v1.5.0) - Auto Backlink Vault
 
 - **🔗 Auto Backlink Vault**: New tool for automated backlink creation across entire vault
 - **🧠 Smart Pattern Matching**: Intelligent detection of note names with false positive prevention
@@ -155,11 +171,6 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - **🛡️ Safety First**: Comprehensive dry-run mode and validation
 - **🎯 Precision Linking**: Configurable matching with common word filtering
 - **📊 Detailed Reporting**: Progress tracking and change previews
-
-**Published**: v1.5.0 is now live on NPM, GitHub, and available as DXT package!
-- 📦 NPM: `npm install -g @huangyihe/obsidian-mcp@1.5.0`
-- 🐙 GitHub: https://github.com/newtype-01/obsidian-mcp/releases/tag/v1.5.0
-- 💾 DXT: Download `obsidian-mcp.dxt` for one-click installation
 
 ### Previous Updates (v1.4.0)
 - **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop
