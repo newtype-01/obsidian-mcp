@@ -12,26 +12,55 @@ Created by huangyihe
 
 ## Features
 
-- Seamless integration with Obsidian knowledge bases
-- Support for reading, creating, updating, and deleting notes
-- Support for creating, renaming, moving, and deleting folders
-- Full-text search functionality
-- Compliance with the Model Context Protocol specification
+- **🔗 Seamless Obsidian Integration**: Direct access to Obsidian knowledge bases through MCP protocol
+- **📝 Complete Note Management**: Read, create, update, and delete notes with advanced text replacement
+- **📁 Folder Operations**: Create, rename, move, and delete folders with full hierarchy support
+- **🔍 Intelligent Search**: Full-text search across all file types with smart scoring
+- **🤖 AI-Powered Analysis**: **NEW** Strategic insights using TRILEMMA-PRINCIPLES framework
+- **🔗 Auto Backlink Generation**: **NEW** Intelligent detection and conversion of note names to wikilinks
+- **⚡ Precision Editing**: Advanced PATCH operations with heading and block-level targeting
+- **🚀 Dual API Strategy**: Obsidian REST API with filesystem fallback for maximum reliability
+- **🎯 Context Optimization**: Smart content summarization for LLM context length management
+- **📊 Batch Processing**: Efficient bulk operations with progress tracking
 
 ## Supported Tools
 
-The MCP server provides the following tools:
+The MCP server provides the following comprehensive tools:
 
-- `list_notes`: List all notes in the Obsidian vault
-- `read_note`: Read the content of a note in the Obsidian vault
-- `read_multiple_notes`: Read content from multiple notes simultaneously
-- `create_note`: Create a new note in the Obsidian vault
-- `update_note`: Update content in an existing note using targeted text replacements
-- `search_vault`: Search for content in the Obsidian vault
+### 📋 Core Operations
+- `list_notes`: List all notes in the Obsidian vault with optional folder filtering
+- `read_note`: Read the content of a specific note in the Obsidian vault
+- `read_multiple_notes`: Read content from multiple notes simultaneously for batch processing
+- `create_note`: Create a new note in the Obsidian vault with full content
 - `delete_note`: Delete a note from the Obsidian vault
-- `move_note`: Move or rename a note to a new location in the Obsidian vault
-- `manage_folder`: Create, rename, move, or delete a folder in the Obsidian vault
-- `auto_backlink_vault`: 🔗 **Auto Backlink** - Scan the entire vault and intelligently detect note names, automatically converting them to wikilink format (`[[note name]]`)
+
+### 🔍 Search & Discovery
+- `search_vault`: Advanced search across all file types with filename and content matching
+
+### ✏️ Advanced Editing
+- `update_note`: **Enhanced** Update content using text replacements OR precision insertion
+  - Traditional text replacement mode
+  - **NEW** Heading-based insertion (before/after/append/prepend)
+  - **NEW** Block ID-based insertion with `^block-id` support
+  - **NEW** PATCH API integration with filesystem fallback
+
+### 📁 File Management  
+- `move_note`: Move or rename notes to new locations (supports all file types including PDFs)
+- `manage_folder`: Complete folder CRUD operations (create/rename/move/delete)
+
+### 🚀 Advanced Features
+- `auto_backlink_vault`: **🔗 Auto Backlink Generation**
+  - Intelligently scan entire vault for note name mentions
+  - Convert text references to wikilink format (`[[note name]]`)
+  - Smart pattern matching with false positive prevention
+  - Configurable dry-run mode and batch processing
+  
+- `notes_insight`: **🧠 AI-Powered Strategic Analysis** ⭐ **NEW**
+  - Generate strategic insights using TRILEMMA-PRINCIPLES framework
+  - Automatic topic-based note discovery and relevance ranking
+  - AI-driven content summarization for context optimization
+  - Structured analysis: constraint identification → assumption challenges → breakthrough solutions
+  - Configurable parameters for analysis depth and scope
 
 ## Prerequisites
 
