@@ -33,22 +33,17 @@ The MCP server provides the following comprehensive tools:
 - `read_multiple_notes`: Read content from multiple notes simultaneously for batch processing
 - `create_note`: Create a new note in the Obsidian vault with full content
 - `delete_note`: Delete a note from the Obsidian vault
-
-### 🔍 Search & Discovery
 - `search_vault`: Advanced search across all file types with filename and content matching
+- `move_note`: Move or rename notes to new locations (supports all file types including PDFs)
+- `manage_folder`: Complete folder CRUD operations (create/rename/move/delete)
 
-### ✏️ Advanced Editing
+### 🚀 Advanced Features
 - `update_note`: **Enhanced** Update content using text replacements OR precision insertion
   - Traditional text replacement mode
   - **NEW** Heading-based insertion (before/after/append/prepend)
   - **NEW** Block ID-based insertion with `^block-id` support
   - **NEW** PATCH API integration with filesystem fallback
 
-### 📁 File Management  
-- `move_note`: Move or rename notes to new locations (supports all file types including PDFs)
-- `manage_folder`: Complete folder CRUD operations (create/rename/move/delete)
-
-### 🚀 Advanced Features
 - `auto_backlink_vault`: **🔗 Auto Backlink Generation**
   - Intelligently scan entire vault for note name mentions
   - Convert text references to wikilink format (`[[note name]]`)
