@@ -146,7 +146,25 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - Provides detailed preview before making changes
 - Supports undo through version control integration
 
-## Recent Updates (v1.6.0) 🚀 NEW RELEASE
+## Recent Updates (v1.7.0-beta) 🎯 BETA RELEASE
+
+### 🧠 Notes Insight Tool - 战略分析新突破
+
+- **🎯 TRILEMMA-PRINCIPLES框架**: 全新的 notes_insight 工具支持深度战略分析
+- **🔍 智能主题搜索**: 自动搜索并选择最相关的笔记内容
+- **🤖 AI驱动摘要**: 智能处理长笔记，优化上下文长度管理
+- **📊 结构化分析**: 系统性的约束识别、假设挑战和突破性解决方案
+- **⚡ 灵活配置**: 支持自定义笔记数量、上下文长度等参数
+- **🧭 多维分析**: 从时间、空间、实体、技术维度探索解决方案
+- **🎪 智能选择**: 基于相关性评分自动选择最优笔记组合
+
+**Beta Testing**: v1.7.0-beta is now available for testing!
+- 📦 NPM: `npm install -g @huangyihe/obsidian-mcp@1.7.0-beta`
+- 🐙 GitHub: https://github.com/newtype-01/obsidian-mcp/releases/tag/v1.7.0-beta  
+- 💾 DXT: Download latest `obsidian-mcp.dxt` for one-click installation
+- 🧪 Testing Guide: See `TESTING_NOTES_INSIGHT.md` for detailed test instructions
+
+### Previous Updates (v1.6.0) - PATCH 精确插入
 
 ### 🎯 PATCH 精确插入 - 革命性功能发布
 
