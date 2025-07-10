@@ -1,6 +1,6 @@
 {
   "name": "@huangyihe/obsidian-mcp",
-  "version": "1.7.0-beta",
+  "version": "1.7.1-beta",
   "main": "build/index.js",
   "type": "module",
   "bin": {
