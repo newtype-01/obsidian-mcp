@@ -43,6 +43,7 @@ npm test
 - `update_note` - Update content in existing notes using targeted text replacements
 - `read_multiple_notes` - Read content from multiple notes simultaneously
 - `auto_backlink_vault` - **NEW**: Automatically add backlinks throughout the entire vault by detecting note names in content and converting them to wikilinks
+- `notes_insight` - **NEW**: Generate strategic insights about a topic using TRILEMMA-PRINCIPLES framework with AI-powered content summarization
 
 ### Environment Variables:
 - `OBSIDIAN_VAULT_PATH` - Path to the Obsidian vault
@@ -171,6 +172,45 @@ The `auto_backlink_vault` tool provides intelligent automation for creating back
 - **🛡️ Safety First**: Comprehensive dry-run mode and validation
 - **🎯 Precision Linking**: Configurable matching with common word filtering
 - **📊 Detailed Reporting**: Progress tracking and change previews
+
+## Notes Insight Tool
+
+The `notes_insight` tool provides intelligent analysis of topics using the TRILEMMA-PRINCIPLES framework with AI-powered content management. It automatically searches your vault for relevant notes, processes them intelligently, and generates strategic insights.
+
+### Key Features:
+- **🔍 Smart Search**: Automatically finds notes related to your topic using the existing search_vault functionality
+- **🧠 AI-Powered Summarization**: Intelligently summarizes long notes to fit within context limits
+- **📊 Strategic Analysis**: Applies TRILEMMA-PRINCIPLES framework for deep analytical insights
+- **⚡ Context Management**: Automatically handles content length optimization
+- **🎯 Relevance Ranking**: Selects the most relevant notes based on search scores
+
+### Usage Parameters:
+- `topic` (required) - The topic or keyword to analyze
+- `maxNotes` (default: 5) - Maximum number of notes to analyze
+- `maxContextLength` (default: 50000) - Maximum total context length in characters
+- `enableSummary` (default: true) - Whether to enable AI summarization for long notes
+
+### How It Works:
+1. **Search Phase**: Uses search_vault to find notes related to your topic
+2. **Selection Phase**: Ranks results by relevance and selects top notes
+3. **Processing Phase**: Applies AI summarization to long notes if needed
+4. **Analysis Phase**: Integrates content with TRILEMMA-PRINCIPLES framework
+5. **Output Phase**: Returns structured strategic analysis
+
+### Example Usage:
+```
+Topic: "RAG系统设计"
+Result: Strategic analysis identifying constraints (accuracy vs speed vs cost), challenging assumptions about vector databases, and proposing breakthrough solutions for hybrid retrieval systems.
+```
+
+### TRILEMMA-PRINCIPLES Framework:
+The tool uses a sophisticated analytical framework that:
+- Identifies core trilemmas (three conflicting elements)
+- Analyzes constraint sources and trade-offs  
+- Challenges fundamental assumptions
+- Seeks root principles and redefines boundaries
+- Designs breakthrough solutions across multiple dimensions
+- Creates actionable implementation pathways
 
 ### Previous Updates (v1.4.0)
 - **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop

@@ -1344,6 +1344,35 @@ class ObsidianMcpServer {
             required: [],
           },
         },
+        {
+          name: 'notes_insight',
+          description: 'Generate insights about a topic using TRILEMMA-PRINCIPLES framework with AI-powered summarization',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              topic: {
+                type: 'string',
+                description: 'Topic keyword or phrase to analyze'
+              },
+              maxNotes: {
+                type: 'number',
+                description: 'Maximum number of notes to analyze (default: 5)',
+                default: 5
+              },
+              maxContextLength: {
+                type: 'number',
+                description: 'Maximum context length in characters (default: 50000)',
+                default: 50000
+              },
+              enableSummary: {
+                type: 'boolean',
+                description: 'Whether to enable AI summarization for long notes (default: true)',
+                default: true
+              }
+            },
+            required: ['topic'],
+          },
+        },
       ],
     }));
 
@@ -1371,6 +1400,8 @@ class ObsidianMcpServer {
             return await this.handleReadMultipleNotes(request.params.arguments);
           case 'auto_backlink_vault':
             return await this.handleAutoBacklinkVault(request.params.arguments);
+          case 'notes_insight':
+            return await this.handleNotesInsight(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -1753,6 +1784,221 @@ class ObsidianMcpServer {
         },
       ],
     };
+  }
+
+  // Handler for notes_insight tool
+  private async handleNotesInsight(args: any) {
+    if (!args?.topic) {
+      throw new Error('Topic is required');
+    }
+    
+    const topic = args.topic;
+    const maxNotes = args.maxNotes || 5;
+    const maxContextLength = args.maxContextLength || 50000;
+    const enableSummary = args.enableSummary !== undefined ? args.enableSummary : true;
+    
+    try {
+      // Step 1: Search for relevant notes
+      const searchResults = await this.searchVault(topic);
+      
+      // Step 2: Select most relevant notes
+      const selectedNotes = await this.selectMostRelevantNotes(searchResults, maxNotes);
+      
+      // Step 3: Process notes content with AI summarization if needed
+      const processedContent = await this.processNotesContent(
+        selectedNotes, 
+        maxContextLength, 
+        enableSummary
+      );
+      
+      // Step 4: Generate insights using TRILEMMA-PRINCIPLES framework
+      const insights = await this.generateInsights(topic, processedContent);
+      
+      return {
+        content: [
+          {
+            type: 'text',
+            text: insights,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new Error(`Failed to generate insights: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // Helper method to select most relevant notes
+  private async selectMostRelevantNotes(searchResults: any[], maxNotes: number): Promise<{path: string, score: number, content: string}[]> {
+    // Sort by score (descending) and take top results
+    const sortedResults = searchResults
+      .filter(result => result.path && result.score)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, maxNotes);
+    
+    // Read content for selected notes
+    const selectedNotes = await Promise.all(
+      sortedResults.map(async (result) => {
+        try {
+          const content = await this.readNote(result.path);
+          return {
+            path: result.path,
+            score: result.score,
+            content: content
+          };
+        } catch (error) {
+          console.warn(`Failed to read note ${result.path}:`, error);
+          return null;
+        }
+      })
+    );
+    
+    // Filter out failed reads
+    return selectedNotes.filter(note => note !== null) as {path: string, score: number, content: string}[];
+  }
+
+  // Helper method to process notes content with AI summarization
+  private async processNotesContent(
+    notes: {path: string, score: number, content: string}[], 
+    maxContextLength: number, 
+    enableSummary: boolean
+  ): Promise<string> {
+    let totalLength = 0;
+    let processedNotes: string[] = [];
+    
+    for (const note of notes) {
+      let noteContent = note.content;
+      const noteLength = noteContent.length;
+      
+      // Check if summarization is needed
+      if (enableSummary && noteLength > 5000) {
+        try {
+          noteContent = await this.summarizeNoteContent(note.path, noteContent);
+        } catch (error) {
+          console.warn(`Failed to summarize note ${note.path}:`, error);
+          // Fallback to truncating if AI summarization fails
+          noteContent = this.truncateContent(noteContent, 2000);
+        }
+      }
+      
+      // Check if adding this note would exceed context length
+      if (totalLength + noteContent.length > maxContextLength) {
+        // If it's the first note and still too long, truncate it
+        if (processedNotes.length === 0) {
+          noteContent = this.truncateContent(noteContent, maxContextLength - 1000);
+        } else {
+          // Skip this note to stay within limits
+          break;
+        }
+      }
+      
+      processedNotes.push(`## Note: ${note.path}\n\n${noteContent}\n\n---\n`);
+      totalLength += noteContent.length;
+    }
+    
+    return processedNotes.join('\n');
+  }
+
+  // Helper method to summarize note content using AI
+  private async summarizeNoteContent(notePath: string, content: string): Promise<string> {
+    // For MCP context, we prepare a structured summary request
+    // The calling AI will process this and provide a concise summary
+    const summaryRequest = {
+      instruction: "Please provide a concise summary of the following note content, focusing on:",
+      requirements: [
+        "Key concepts and main ideas",
+        "Important details and insights", 
+        "Relevant facts and data points",
+        "Core arguments or conclusions",
+        "Actionable information"
+      ],
+      targetLength: "Aim for 20-30% of original length",
+      originalContent: content
+    };
+    
+    // Return structured summary request that the calling AI can process
+    return `[SUMMARY REQUEST for ${notePath}]
+${summaryRequest.instruction}
+${summaryRequest.requirements.map(req => `- ${req}`).join('\n')}
+${summaryRequest.targetLength}
+
+Original Content:
+${content}
+
+[END SUMMARY REQUEST]`;
+  }
+
+  // Helper method to truncate content while preserving structure
+  private truncateContent(content: string, maxLength: number): string {
+    if (content.length <= maxLength) return content;
+    
+    const truncated = content.substring(0, maxLength - 50);
+    const lastNewline = truncated.lastIndexOf('\n');
+    
+    if (lastNewline > maxLength * 0.7) {
+      return truncated.substring(0, lastNewline) + '\n\n[Content truncated...]';
+    }
+    
+    return truncated + '\n\n[Content truncated...]';
+  }
+
+  // Helper method to generate insights using TRILEMMA-PRINCIPLES framework
+  private async generateInsights(topic: string, processedContent: string): Promise<string> {
+    // Load the TRILEMMA-PRINCIPLES framework from the prepared file
+    const trilemmaPrompt = await this.loadTrilemmaPrompt();
+    
+    // Construct the final prompt for insights generation
+    const insightPrompt = `${trilemmaPrompt}
+
+## Analysis Context
+
+**Topic**: ${topic}
+
+**Relevant Notes Content**:
+${processedContent}
+
+## Task
+
+Apply the TRILEMMA-PRINCIPLES framework to analyze the topic "${topic}" based on the provided notes content. Focus on identifying constraints, challenging assumptions, and proposing breakthrough solutions.
+
+Please provide your analysis following the framework structure:
+1. TRILEMMA IDENTIFICATION
+2. FIRST PRINCIPLES QUESTIONING  
+3. BREAKTHROUGH SOLUTION
+4. SYNTHESIS & RECOMMENDATIONS`;
+
+    return insightPrompt;
+  }
+
+  // Helper method to load TRILEMMA-PRINCIPLES prompt
+  private async loadTrilemmaPrompt(): Promise<string> {
+    try {
+      const promptPath = path.join(process.cwd(), 'notes_insight_prompt.md');
+      if (fs.existsSync(promptPath)) {
+        return fs.readFileSync(promptPath, 'utf-8');
+      }
+      
+      // Fallback to embedded prompt if file doesn't exist
+      return `# TRILEMMA-PRINCIPLES Analysis Framework
+      
+Apply strategic analysis to identify constraints, challenge assumptions, and generate breakthrough solutions.
+
+## Framework Steps:
+1. Identify the core trilemma (three conflicting elements)
+2. Analyze constraint sources and trade-offs
+3. Challenge fundamental assumptions
+4. Seek root principles and redefine boundaries
+5. Design breakthrough solutions across multiple dimensions
+6. Create new equilibrium and implementation pathway
+
+## Output Format:
+- TRILEMMA IDENTIFICATION: [constraints and trade-offs]
+- FIRST PRINCIPLES QUESTIONING: [assumption challenges]
+- BREAKTHROUGH SOLUTION: [innovative approaches]
+- SYNTHESIS & RECOMMENDATIONS: [actionable insights]`;
+    } catch (error) {
+      console.warn('Failed to load TRILEMMA prompt:', error);
+      return 'Please analyze the topic using strategic thinking principles.';
+    }
   }
 
   // Obsidian API methods
