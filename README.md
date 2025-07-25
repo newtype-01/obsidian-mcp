@@ -4,6 +4,10 @@ English | [中文](./README.zh.md)
 
 This project implements a Model Context Protocol (MCP) server for connecting AI models with Obsidian knowledge bases. Through this server, AI models can directly access and manipulate Obsidian notes, including reading, creating, updating, and deleting notes, as well as managing folder structures.
 
+<a href="https://glama.ai/mcp/servers/@newtype-01/obsidian-mcp">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@newtype-01/obsidian-mcp/badge" alt="Obsidian MCP server" />
+</a>
+
 Created by huangyihe
 - Prompt House: https://prompthouse.app/
 - YouTube: https://www.youtube.com/@huanyihe777
