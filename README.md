@@ -28,7 +28,9 @@ Created by huangyihe
 The MCP server provides the following comprehensive tools:
 
 ### 📋 Core Operations
-- `list_notes`: List all notes in the Obsidian vault with optional folder filtering
+- `list_notes`: List notes in the Obsidian vault with optional folder filtering
+  - **NEW** `recursive` parameter: Control whether to list files recursively in subdirectories (default: true)
+  - Use `recursive: false` to list only files in the specified folder without subdirectories
 - `read_note`: Read the content of a specific note in the Obsidian vault
 - `read_multiple_notes`: Read content from multiple notes simultaneously for batch processing
 - `create_note`: Create a new note in the Obsidian vault with full content

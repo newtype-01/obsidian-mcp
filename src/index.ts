@@ -1097,13 +1097,18 @@ class ObsidianMcpServer {
       tools: [
         {
           name: 'list_notes',
-          description: 'List all notes in the Obsidian vault',
+          description: 'List notes in the Obsidian vault. By default lists all notes recursively.',
           inputSchema: {
             type: 'object',
             properties: {
               folder: {
                 type: 'string',
-                description: 'Folder path within the vault (optional)',
+                description: 'Folder path within the vault (optional). If not provided, lists from vault root.',
+              },
+              recursive: {
+                type: 'boolean',
+                description: 'Whether to list files recursively in subdirectories (default: true)',
+                default: true,
               },
             },
             required: [],
@@ -1421,7 +1426,8 @@ class ObsidianMcpServer {
   // Tool handler implementations
   private async handleListNotes(args: any) {
     const folder = args?.folder || '';
-    const files = await this.listVaultFiles(folder);
+    const recursive = args?.recursive !== undefined ? args.recursive : true;
+    const files = await this.listVaultFiles(folder, recursive);
     
     return {
       content: [
@@ -2097,13 +2103,13 @@ Your goal is to help users see beyond apparent limitations and discover innovati
   }
 
   // Obsidian API methods
-  private async listVaultFiles(folder: string = ''): Promise<string[]> {
+  private async listVaultFiles(folder: string = '', recursive: boolean = true): Promise<string[]> {
     // List vault files
     
     try {
       // First try using the Obsidian API - but it doesn't support recursive listing
       // So we need to manually traverse folders
-      const allFiles = await this.getAllFilesRecursively('');
+      const allFiles = await this.getAllFilesRecursively(folder, recursive);
       // Files found recursively
       return allFiles;
     } catch (error) {
@@ -2111,12 +2117,12 @@ Your goal is to help users see beyond apparent limitations and discover innovati
       
       // Fallback to file system if API fails
       const basePath = path.join(VAULT_PATH, folder);
-      return this.listFilesRecursively(basePath);
+      return this.listFilesRecursively(basePath, recursive);
     }
   }
 
   // Recursive API-based file listing
-  private async getAllFilesRecursively(folderPath: string): Promise<string[]> {
+  private async getAllFilesRecursively(folderPath: string, recursive: boolean = true): Promise<string[]> {
     const allFiles: string[] = [];
     
     try {
@@ -2131,12 +2137,16 @@ Your goal is to help users see beyond apparent limitations and discover innovati
         const fullPath = folderPath ? `${folderPath}/${item}` : item;
         
         if (item.endsWith('/')) {
-          // It's a folder, recurse into it
-          const folderName = item.slice(0, -1); // Remove trailing '/'
-          const subFolderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
-          // Recurse into subfolder
-          const subFiles = await this.getAllFilesRecursively(subFolderPath);
-          allFiles.push(...subFiles);
+          // It's a folder
+          if (recursive) {
+            // Recurse into it if recursive mode is enabled
+            const folderName = item.slice(0, -1); // Remove trailing '/'
+            const subFolderPath = folderPath ? `${folderPath}/${folderName}` : folderName;
+            // Recurse into subfolder
+            const subFiles = await this.getAllFilesRecursively(subFolderPath, recursive);
+            allFiles.push(...subFiles);
+          }
+          // If not recursive, skip folders
         } else {
           // It's a file
           allFiles.push(fullPath);
@@ -2148,7 +2158,7 @@ Your goal is to help users see beyond apparent limitations and discover innovati
       // If API fails for a specific folder, try filesystem fallback for that folder
       try {
         const basePath = path.join(VAULT_PATH, folderPath);
-        const fallbackFiles = this.listFilesRecursively(basePath);
+        const fallbackFiles = this.listFilesRecursively(basePath, recursive);
         // relativePaths are already calculated correctly in listFilesRecursively
         allFiles.push(...fallbackFiles);
       } catch (fsError) {
@@ -2159,7 +2169,7 @@ Your goal is to help users see beyond apparent limitations and discover innovati
     return allFiles;
   }
 
-  private listFilesRecursively(dir: string): string[] {
+  private listFilesRecursively(dir: string, recursive: boolean = true): string[] {
     const files: string[] = [];
     
     const items = fs.readdirSync(dir);
@@ -2173,7 +2183,11 @@ Your goal is to help users see beyond apparent limitations and discover innovati
       const stat = fs.statSync(fullPath);
       
       if (stat.isDirectory()) {
-        files.push(...this.listFilesRecursively(fullPath));
+        if (recursive) {
+          // Only recurse if recursive mode is enabled
+          files.push(...this.listFilesRecursively(fullPath, recursive));
+        }
+        // If not recursive, skip directories
       } else {
         // Include all file types, not just .md files
         const relativePath = path.relative(VAULT_PATH, fullPath);

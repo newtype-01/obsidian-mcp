@@ -28,7 +28,9 @@ Created by huangyihe
 MCP 服务器提供以下全面的工具集：
 
 ### 📋 核心操作
-- `list_notes`: 列出知识库中的所有笔记，支持文件夹过滤
+- `list_notes`: 列出知识库中的笔记，支持文件夹过滤
+  - **全新** `recursive` 参数：控制是否递归列出子目录中的文件（默认：true）
+  - 使用 `recursive: false` 只列出指定文件夹中的文件，不包含子目录
 - `read_note`: 读取知识库中特定笔记的内容
 - `read_multiple_notes`: 同时读取多个笔记的内容，支持批处理
 - `create_note`: 在知识库中创建包含完整内容的新笔记
