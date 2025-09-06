@@ -10,6 +10,7 @@
     "build": "tsc && chmod +x build/index.js",
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
+    "setup": "node setup.js",
     "test": "node test-mcp.js",
     "generate-dxt": "npm run build && node generate-dxt.js",
     "prepublishOnly": "npm run build"
@@ -54,6 +55,8 @@
     "dotenv": "^16.4.5",
     "eventsource": "^4.0.0",
     "express": "^5.1.0",
+    "inquirer": "^8.2.6",
+    "keychain": "^1.5.0",
     "node-fetch": "^3.3.2",
     "path-browserify": "^1.0.1",
     "ts-node": "^10.9.2",

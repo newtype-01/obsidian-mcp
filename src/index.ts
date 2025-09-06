@@ -16,15 +16,49 @@ import * as fs from 'fs';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
 import { createTwoFilesPatch } from 'diff';
+import keychain from 'keychain';
+
+const KEYCHAIN_SERVICE = 'com.mcp.obsidian-mcp';
+const KEYCHAIN_ACCOUNT = 'OBSIDIAN_API_TOKEN';
+
+// Function to get API token from keychain
+function getTokenFromKeychain(): Promise<string | null> {
+  return new Promise((resolve) => {
+    keychain.getPassword({ 
+      account: KEYCHAIN_ACCOUNT, 
+      service: KEYCHAIN_SERVICE 
+    }, (err: Error | null, password?: string) => {
+      if (err || !password) {
+        resolve(null);
+      } else {
+        resolve(password);
+      }
+    });
+  });
+}
 
 // Parse command line arguments for NPM usage
-function parseCliArgs() {
+async function parseCliArgs() {
   const args = process.argv.slice(2);
   
-  // First try environment variables, then CLI args as fallback
+  // First try environment variables, then keychain, then CLI args as fallback
+  let apiToken = process.env.OBSIDIAN_API_TOKEN || '';
+  
+  // If no environment variable, try keychain
+  if (!apiToken) {
+    try {
+      const keychainToken = await getTokenFromKeychain();
+      if (keychainToken) {
+        apiToken = keychainToken;
+      }
+    } catch (error) {
+      console.warn('Warning: Failed to retrieve token from keychain:', error);
+    }
+  }
+  
   const config = {
     vaultPath: process.env.OBSIDIAN_VAULT_PATH || './vault',
-    apiToken: process.env.OBSIDIAN_API_TOKEN || '',
+    apiToken: apiToken,
     apiPort: process.env.OBSIDIAN_API_PORT || '27123',
     apiHost: process.env.OBSIDIAN_API_HOST || '127.0.0.1',
     transport: process.env.OBSIDIAN_TRANSPORT || 'stdio',
@@ -80,7 +114,12 @@ Environment variables:
   OBSIDIAN_HTTP_PORT    HTTP server port for SSE transport (default: 3000)
   OBSIDIAN_HTTP_HOST    HTTP server host for SSE transport (default: 127.0.0.1)
 
+Secure token storage:
+  Run 'node setup.js' to securely store your API token in the system keychain.
+  The token will be automatically retrieved if not set via environment variable.
+
 Examples:
+  node setup.js  # Store API token securely in keychain
   obsidian-mcp --vault-path "/path/to/vault" --api-token "your-token"
   obsidian-mcp --transport http --http-port 8080 --vault-path "/path/to/vault"
   OBSIDIAN_VAULT_PATH="/path/to/vault" OBSIDIAN_API_TOKEN="token" obsidian-mcp
@@ -969,28 +1008,15 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
   return `File ${filePath} updated successfully`;
 }
 
-// Obsidian API configuration
-const CONFIG = parseCliArgs();
-// Ensure vault path is absolute
-const VAULT_PATH = path.isAbsolute(CONFIG.vaultPath) 
-  ? CONFIG.vaultPath 
-  : path.resolve(process.cwd(), CONFIG.vaultPath);
-const API_TOKEN = CONFIG.apiToken;
-const API_PORT = CONFIG.apiPort;
-const API_HOST = CONFIG.apiHost;
-const API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
-const TRANSPORT_MODE = CONFIG.transport;
-const HTTP_PORT = parseInt(CONFIG.httpPort);
-const HTTP_HOST = CONFIG.httpHost;
-
-// Configuration loaded
-
-// Validate vault path exists
-if (!fs.existsSync(VAULT_PATH)) {
-  console.error(`[ERROR] Vault path does not exist: ${VAULT_PATH}`);
-  console.error(`[ERROR] Please check your vault path configuration`);
-  console.error(`[ERROR] Current working directory: ${process.cwd()}`);
-}
+// Global variables to be initialized
+let VAULT_PATH: string;
+let API_TOKEN: string;
+let API_PORT: string;
+let API_HOST: string;
+let API_BASE_URL: string;
+let TRANSPORT_MODE: string;
+let HTTP_PORT: number;
+let HTTP_HOST: string;
 
 class ObsidianMcpServer {
   private server: Server;
@@ -2630,12 +2656,47 @@ Your goal is to help users see beyond apparent limitations and discover innovati
   }
 }
 
-// Validate transport mode
-if (TRANSPORT_MODE !== 'stdio' && TRANSPORT_MODE !== 'http') {
-  console.error(`[ERROR] Invalid transport mode: ${TRANSPORT_MODE}. Must be 'stdio' or 'http'`);
-  process.exit(1);
+// Async initialization function
+async function initializeAndRun() {
+  try {
+    // Obsidian API configuration
+    const CONFIG = await parseCliArgs();
+    
+    // Ensure vault path is absolute
+    VAULT_PATH = path.isAbsolute(CONFIG.vaultPath) 
+      ? CONFIG.vaultPath 
+      : path.resolve(process.cwd(), CONFIG.vaultPath);
+    API_TOKEN = CONFIG.apiToken;
+    API_PORT = CONFIG.apiPort;
+    API_HOST = CONFIG.apiHost;
+    API_BASE_URL = `http://${API_HOST}:${API_PORT}`;
+    TRANSPORT_MODE = CONFIG.transport;
+    HTTP_PORT = parseInt(CONFIG.httpPort);
+    HTTP_HOST = CONFIG.httpHost;
+
+    // Configuration loaded
+
+    // Validate vault path exists
+    if (!fs.existsSync(VAULT_PATH)) {
+      console.error(`[ERROR] Vault path does not exist: ${VAULT_PATH}`);
+      console.error(`[ERROR] Please check your vault path configuration`);
+      console.error(`[ERROR] Current working directory: ${process.cwd()}`);
+    }
+
+    // Validate transport mode
+    if (TRANSPORT_MODE !== 'stdio' && TRANSPORT_MODE !== 'http') {
+      console.error(`[ERROR] Invalid transport mode: ${TRANSPORT_MODE}. Must be 'stdio' or 'http'`);
+      process.exit(1);
+    }
+
+    // Create and run the server
+    const server = new ObsidianMcpServer();
+    await server.run();
+  } catch (error) {
+    console.error('[ERROR] Failed to initialize server:', error);
+    process.exit(1);
+  }
 }
 
-// Create and run the server
-const server = new ObsidianMcpServer();
-server.run().catch(console.error);
+// Start the application
+initializeAndRun().catch(console.error);

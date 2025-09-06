@@ -228,6 +228,35 @@ All installation methods require the following configuration:
 2. Generate API Token in plugin settings
 3. Note the port number (default 27123)
 
+### 🔐 Secure Token Storage (Recommended)
+
+For enhanced security, you can store your API token in your system's keychain instead of using environment variables:
+
+**Quick Setup:**
+```bash
+# After installation, run the setup script
+node setup.js
+
+# Or if you have the package installed:
+npm run setup
+```
+
+This will:
+- Prompt you to enter your API token securely (input is hidden)
+- Store the token in your system keychain under `com.mcp.obsidian-mcp`
+- Automatically retrieve the token when running obsidian-mcp
+
+**Benefits:**
+- ✅ No need to set environment variables
+- ✅ Token is encrypted and stored securely in system keychain
+- ✅ Works across all terminal sessions
+- ✅ Compatible with all installation methods
+
+**Token Priority Order:**
+1. `OBSIDIAN_API_TOKEN` environment variable (if set)
+2. System keychain (if token was stored via `node setup.js`)
+3. Command line `--api-token` argument
+
 
 ## Testing
 
