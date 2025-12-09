@@ -4,6 +4,21 @@ English | [中文](./README.zh.md)
 
 This project implements a Model Context Protocol (MCP) server for connecting AI models with Obsidian knowledge bases. Through this server, AI models can directly access and manipulate Obsidian notes, including reading, creating, updating, and deleting notes, as well as managing folder structures.
 
+## What's New in v2.0.0-beta 🎉
+
+This version adds **30 new tools** across 6 major categories:
+
+- **🏷️ Tag Management (5 tools)**: List, add, remove, find by tags, and rename tags across vault
+- **🔗 Graph & Link Analysis (5 tools)**: Backlinks, outgoing links, orphaned notes, broken links, and link graph visualization
+- **📋 Metadata & Frontmatter (3 tools)**: Update, get, and bulk-update frontmatter properties
+- **📅 Daily Notes & Templates (3 tools)**: Create daily notes, get specific dates, and apply templates with variables
+- **📊 Analytics & Statistics (3 tools)**: Note stats, vault stats, and recent notes tracking
+- **✂️ Content Operations (4 tools)**: Merge notes, split by headings, duplicate, and append with timestamps
+- **📎 Attachment Management (3 tools)**: List attachments, find unused files, and get note attachments
+- **⚙️ Configuration Management (7 tools)**: Smart defaults and custom note patterns for projects, books, meetings, etc.
+
+**Total: 45 tools** (15 original + 30 new)
+
 Created by huangyihe
 - Prompt House: https://prompthouse.app/
 - YouTube: https://www.youtube.com/@huanyihe777
@@ -25,7 +40,7 @@ Created by huangyihe
 
 ## Supported Tools
 
-The MCP server provides the following comprehensive tools:
+The MCP server provides **45 comprehensive tools** organized into categories:
 
 ### 📋 Core Operations
 - `list_notes`: List notes in the Obsidian vault with optional folder filtering
@@ -58,6 +73,61 @@ The MCP server provides the following comprehensive tools:
   - AI-driven content summarization for context optimization
   - Structured analysis: constraint identification → assumption challenges → breakthrough solutions
   - Configurable parameters for analysis depth and scope
+
+### 🏷️ Tag Management
+- `list_tags`: List all tags with occurrence counts (sortable by name or count)
+- `add_tags`: Add tags to notes (frontmatter/inline/both locations)
+- `remove_tags`: Remove tags from notes
+- `find_notes_by_tag`: Find notes by tags with AND/OR logic
+- `rename_tag`: Rename tags across entire vault with dry-run preview
+
+### 🔗 Graph & Link Analysis
+- `get_backlinks`: Find all notes linking to a specific note
+- `get_outgoing_links`: List all outgoing links from a note
+- `find_orphaned_notes`: Find notes with no incoming or outgoing links
+- `find_broken_links`: Detect broken wikilinks in the vault
+- `get_link_graph`: Generate graph data (nodes/edges) for visualization
+
+### 📋 Metadata & Frontmatter
+- `update_frontmatter`: Add, update, or delete frontmatter properties
+- `get_frontmatter`: Extract frontmatter from a note
+- `bulk_update_metadata`: Update frontmatter across multiple notes
+
+### 📅 Daily Notes & Templates
+- `create_daily_note`: Create or get today's daily note (uses config defaults)
+- `get_daily_note`: Get daily note for specific date
+- `apply_template`: Apply template with variable replacement ({{title}}, {{date}}, etc.)
+
+### 📊 Analytics & Statistics
+- `get_note_stats`: Word count, character count, reading time, link count, tag count, headings
+- `get_vault_stats`: Total notes, attachments, words, links, unique tags, vault size
+- `get_recent_notes`: List recently modified or created notes
+
+### ✂️ Content Operations
+- `merge_notes`: Combine multiple notes into one with custom separator
+- `split_note`: Split note by headings into separate files
+- `duplicate_note`: Create a copy of a note
+- `append_to_note`: Quick append with optional timestamp
+
+### 📎 Attachment Management
+- `list_attachments`: List all media/PDF files with size info (filterable by type)
+- `find_unused_attachments`: Find orphaned attachments not referenced anywhere
+- `get_note_attachments`: List attachments referenced in a specific note
+
+### ⚙️ Configuration Management
+- `get_config`: View current configuration
+- `update_config`: Update config values (e.g., daily notes folder, tag location)
+- `add_pattern`: Add custom note patterns (projects, books, meetings, etc.)
+- `remove_pattern`: Remove a custom pattern
+- `list_patterns`: List all configured patterns
+- `create_pattern_note`: Create notes using saved patterns
+- `reset_config`: Reset configuration to defaults
+
+**Configuration enables:**
+- Set default folders for daily notes, templates, attachments
+- Define custom note patterns (e.g., project notes in "Projects" folder)
+- Never repeat folder paths - configure once, use everywhere
+- Supports template variables: {{title}}, {{date}}, {{time}}, and custom variables
 
 ## Prerequisites
 
@@ -108,7 +178,7 @@ Simply add the following configuration to your MCP client config file:
     "obsidian-mcp": {
       "command": "npx",
       "args": [
-        "@huangyihe/obsidian-mcp"
+        "@augustovq/mine-obsidian-mcp"
       ],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
@@ -132,7 +202,7 @@ Simply add the following configuration to your MCP client config file:
 
 **Step 1: Global Install**
 ```bash
-npm install -g @huangyihe/obsidian-mcp
+npm install -g @augustovq/mine-obsidian-mcp
 ```
 
 **Step 2: MCP Client Configuration**
