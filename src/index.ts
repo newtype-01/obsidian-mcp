@@ -92,6 +92,59 @@ Examples:
   return config;
 }
 
+// Configuration interface
+interface ObsidianMCPConfig {
+  dailyNotes?: {
+    folder?: string;
+    dateFormat?: string;
+    template?: string;
+  };
+  weeklyNotes?: {
+    folder?: string;
+    dateFormat?: string;
+    template?: string;
+  };
+  templates?: {
+    folder?: string;
+  };
+  attachments?: {
+    folder?: string;
+    defaultTypes?: string[];
+  };
+  defaults?: {
+    tagLocation?: 'frontmatter' | 'inline' | 'both';
+    newNoteFolder?: string;
+  };
+  patterns?: {
+    [key: string]: {
+      folder: string;
+      filenameFormat?: string;
+      template?: string;
+      description?: string;
+    };
+  };
+}
+
+// Default configuration
+const DEFAULT_CONFIG: ObsidianMCPConfig = {
+  dailyNotes: {
+    folder: 'Daily Notes',
+    dateFormat: 'YYYY-MM-DD',
+  },
+  templates: {
+    folder: 'Templates',
+  },
+  attachments: {
+    folder: 'Attachments',
+    defaultTypes: ['pdf', 'png', 'jpg', 'jpeg', 'gif'],
+  },
+  defaults: {
+    tagLocation: 'frontmatter',
+    newNoteFolder: '',
+  },
+  patterns: {},
+};
+
 // Helper functions for file editing
 function normalizeLineEndings(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -129,6 +182,8 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const COMMON_WORDS = new Set(['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'over', 'after']);
+
 function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: {
   minLength: number;
   caseSensitive: boolean;
@@ -165,13 +220,24 @@ function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: 
   // Sort skip regions by start position
   skipRegions.sort((a, b) => a.start - b.start);
   
-  // Function to check if a position is in a skip region
+  // Binary search: find first region whose end > start
   function isInSkipRegion(start: number, end: number): boolean {
-    return skipRegions.some(region => 
-      (start >= region.start && start < region.end) ||
-      (end > region.start && end <= region.end) ||
-      (start <= region.start && end >= region.end)
-    );
+    let lo = 0, hi = skipRegions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (skipRegions[mid].end <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    // Check if any overlapping region exists from lo onward
+    for (let k = lo; k < skipRegions.length && skipRegions[k].start < end; k++) {
+      const region = skipRegions[k];
+      if (
+        (start >= region.start && start < region.end) ||
+        (end > region.start && end <= region.end) ||
+        (start <= region.start && end >= region.end)
+      ) return true;
+    }
+    return false;
   }
   
   // Process each note in the index
@@ -181,8 +247,7 @@ function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: 
     }
     
     // Skip very common words to avoid over-linking
-    const commonWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'over', 'after'];
-    if (commonWords.includes(note.nameWithoutExt.toLowerCase())) {
+    if (COMMON_WORDS.has(note.nameWithoutExt.toLowerCase())) {
       continue;
     }
     
@@ -563,66 +628,45 @@ function parseMarkdown(content: string): MarkdownElement[] {
   return elements;
 }
 
-// 查找标题位置
+// 查找标题位置 (single pass: exact → contains → normalized)
 function findHeadingPosition(
-  elements: MarkdownElement[], 
-  heading: string, 
+  elements: MarkdownElement[],
+  heading: string,
   level?: number
 ): { index: number; element: MarkdownElement } | null {
   const lowerHeading = heading.toLowerCase().trim();
-  
-  // 先尝试精确匹配
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 精确匹配
-      if (element.content.toLowerCase().trim() === lowerHeading) {
-        return { index: i, element };
-      }
-    }
-  }
-  
-  // 如果精确匹配失败，尝试模糊匹配
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 包含匹配
-      if (element.content.toLowerCase().includes(lowerHeading)) {
-        return { index: i, element };
-      }
-    }
-  }
-  
-  // 最后尝试更宽松的匹配（移除特殊字符）
   const normalizedHeading = lowerHeading.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+
+  let containsMatch: { index: number; element: MarkdownElement } | null = null;
+  let normalizedMatch: { index: number; element: MarkdownElement } | null = null;
+
   for (let i = 0; i < elements.length; i++) {
     const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 标准化后匹配
-      const normalizedContent = element.content.toLowerCase()
-        .replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+    if (element.type !== 'heading') continue;
+    if (level && element.level !== level) continue;
+
+    const lowerContent = element.content.toLowerCase().trim();
+
+    // Exact match — return immediately
+    if (lowerContent === lowerHeading) {
+      return { index: i, element };
+    }
+
+    // Record first contains match
+    if (!containsMatch && lowerContent.includes(lowerHeading)) {
+      containsMatch = { index: i, element };
+    }
+
+    // Record first normalized match
+    if (!normalizedMatch) {
+      const normalizedContent = lowerContent.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
       if (normalizedContent.includes(normalizedHeading)) {
-        return { index: i, element };
+        normalizedMatch = { index: i, element };
       }
     }
   }
-  
-  return null;
+
+  return containsMatch ?? normalizedMatch ?? null;
 }
 
 // 查找块ID位置
@@ -895,26 +939,26 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
       
       // Try flexible line-by-line matching
       const oldLines = oldText.split('\n');
+      const trimmedOldLines = oldLines.map(l => l.trim()); // pre-trim once
       const newLines = newText.split('\n');
       let matchFound = false;
-      
+
       // Find matching sequence of lines
       for (let i = 0; i <= lines.length - oldLines.length; i++) {
         let isMatch = true;
         const matchedIndentations: string[] = [];
-        
+
         // Check if lines match (ignoring leading/trailing whitespace)
         for (let j = 0; j < oldLines.length; j++) {
           const contentLine = lines[i + j];
-          const oldLine = oldLines[j];
-          
+
           // Extract indentation from content line
           const indentMatch = contentLine.match(/^(\s*)/);
           const indentation = indentMatch ? indentMatch[1] : '';
           matchedIndentations.push(indentation);
-          
+
           // Compare trimmed lines
-          if (contentLine.trim() !== oldLine.trim()) {
+          if (contentLine.trim() !== trimmedOldLines[j]) {
             isMatch = false;
             break;
           }
@@ -959,11 +1003,12 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
     fs.writeFileSync(tempFile, modifiedContent, 'utf-8');
     fs.renameSync(tempFile, fullPath);
   } catch (error) {
-    // Clean up temp file if it exists
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
     throw new Error(`Failed to write file ${filePath}: ${error}`);
+  } finally {
+    // Clean up temp file if rename failed and it still exists
+    if (fs.existsSync(tempFile)) {
+      try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
+    }
   }
   
   return `File ${filePath} updated successfully`;
@@ -1378,6 +1423,599 @@ class ObsidianMcpServer {
             required: ['topic'],
           },
         },
+        {
+          name: 'list_tags',
+          description: 'List all tags used across the vault with their occurrence counts',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sortBy: {
+                type: 'string',
+                enum: ['name', 'count'],
+                description: 'Sort tags by name or count (default: count)',
+                default: 'count'
+              }
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'add_tags',
+          description: 'Add tags to a specific note (supports both inline tags and frontmatter)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note within the vault'
+              },
+              tags: {
+                type: 'array',
+                description: 'Array of tags to add (without # prefix)',
+                items: {
+                  type: 'string'
+                }
+              },
+              location: {
+                type: 'string',
+                enum: ['frontmatter', 'inline', 'both'],
+                description: 'Where to add tags: frontmatter, inline (at end of note), or both (default: frontmatter)',
+                default: 'frontmatter'
+              }
+            },
+            required: ['path', 'tags'],
+          },
+        },
+        {
+          name: 'remove_tags',
+          description: 'Remove tags from a specific note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note within the vault'
+              },
+              tags: {
+                type: 'array',
+                description: 'Array of tags to remove (without # prefix)',
+                items: {
+                  type: 'string'
+                }
+              }
+            },
+            required: ['path', 'tags'],
+          },
+        },
+        {
+          name: 'find_notes_by_tag',
+          description: 'Find all notes containing specific tags',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              tags: {
+                type: 'array',
+                description: 'Array of tags to search for (without # prefix)',
+                items: {
+                  type: 'string'
+                }
+              },
+              matchAll: {
+                type: 'boolean',
+                description: 'If true, notes must contain all tags. If false, notes can contain any of the tags (default: false)',
+                default: false
+              }
+            },
+            required: ['tags'],
+          },
+        },
+        {
+          name: 'rename_tag',
+          description: 'Rename a tag across all notes in the vault',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              oldTag: {
+                type: 'string',
+                description: 'Current tag name (without # prefix)'
+              },
+              newTag: {
+                type: 'string',
+                description: 'New tag name (without # prefix)'
+              },
+              dryRun: {
+                type: 'boolean',
+                description: 'Preview changes without applying them (default: true)',
+                default: true
+              }
+            },
+            required: ['oldTag', 'newTag'],
+          },
+        },
+        // Graph & Link Analysis Tools
+        {
+          name: 'get_backlinks',
+          description: 'Find all notes that link to a specific note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              notePath: {
+                type: 'string',
+                description: 'Path to the note to find backlinks for'
+              }
+            },
+            required: ['notePath'],
+          },
+        },
+        {
+          name: 'get_outgoing_links',
+          description: 'List all links from a specific note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              notePath: {
+                type: 'string',
+                description: 'Path to the note to get outgoing links from'
+              }
+            },
+            required: ['notePath'],
+          },
+        },
+        {
+          name: 'find_orphaned_notes',
+          description: 'Find notes with no incoming or outgoing links',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'find_broken_links',
+          description: 'Detect broken wikilinks in the vault',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'get_link_graph',
+          description: 'Generate graph data (nodes/edges) for vault visualization',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              includeOrphans: {
+                type: 'boolean',
+                description: 'Include orphaned notes in the graph (default: true)',
+                default: true
+              }
+            },
+            required: [],
+          },
+        },
+        // Metadata & Frontmatter Tools
+        {
+          name: 'update_frontmatter',
+          description: 'Add, update, or delete frontmatter properties in a note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note'
+              },
+              updates: {
+                type: 'object',
+                description: 'Object with property names as keys and new values (use null to delete)'
+              }
+            },
+            required: ['path', 'updates'],
+          },
+        },
+        {
+          name: 'get_frontmatter',
+          description: 'Extract frontmatter properties from a note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note'
+              }
+            },
+            required: ['path'],
+          },
+        },
+        {
+          name: 'bulk_update_metadata',
+          description: 'Update frontmatter properties across multiple notes',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              paths: {
+                type: 'array',
+                description: 'Array of note paths to update',
+                items: {
+                  type: 'string'
+                }
+              },
+              updates: {
+                type: 'object',
+                description: 'Object with property names as keys and new values'
+              }
+            },
+            required: ['paths', 'updates'],
+          },
+        },
+        // Daily Notes & Templates
+        {
+          name: 'create_daily_note',
+          description: 'Create or get today\'s daily note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              folder: {
+                type: 'string',
+                description: 'Folder path for daily notes (default: "Daily Notes")',
+                default: 'Daily Notes'
+              },
+              template: {
+                type: 'string',
+                description: 'Template content for new daily notes (optional)'
+              },
+              dateFormat: {
+                type: 'string',
+                description: 'Date format for filename (default: "YYYY-MM-DD")',
+                default: 'YYYY-MM-DD'
+              }
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'get_daily_note',
+          description: 'Get daily note for a specific date',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description: 'Date in YYYY-MM-DD format'
+              },
+              folder: {
+                type: 'string',
+                description: 'Folder path for daily notes (default: "Daily Notes")',
+                default: 'Daily Notes'
+              }
+            },
+            required: ['date'],
+          },
+        },
+        {
+          name: 'apply_template',
+          description: 'Apply a template to a new or existing note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              notePath: {
+                type: 'string',
+                description: 'Path to the target note'
+              },
+              templatePath: {
+                type: 'string',
+                description: 'Path to the template note'
+              },
+              variables: {
+                type: 'object',
+                description: 'Variables to replace in template (e.g., {{title}}, {{date}})'
+              }
+            },
+            required: ['notePath', 'templatePath'],
+          },
+        },
+        // Analytics & Statistics
+        {
+          name: 'get_note_stats',
+          description: 'Get statistics for a specific note (word count, character count, reading time, link count)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note'
+              }
+            },
+            required: ['path'],
+          },
+        },
+        {
+          name: 'get_vault_stats',
+          description: 'Get overall vault statistics',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'get_recent_notes',
+          description: 'List recently modified or created notes',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              limit: {
+                type: 'number',
+                description: 'Maximum number of notes to return (default: 10)',
+                default: 10
+              },
+              sortBy: {
+                type: 'string',
+                enum: ['modified', 'created'],
+                description: 'Sort by modified or created time (default: modified)',
+                default: 'modified'
+              }
+            },
+            required: [],
+          },
+        },
+        // Content Operations
+        {
+          name: 'merge_notes',
+          description: 'Combine multiple notes into one',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sourcePaths: {
+                type: 'array',
+                description: 'Array of note paths to merge',
+                items: {
+                  type: 'string'
+                }
+              },
+              destinationPath: {
+                type: 'string',
+                description: 'Path for the merged note'
+              },
+              deleteSources: {
+                type: 'boolean',
+                description: 'Delete source notes after merging (default: false)',
+                default: false
+              },
+              separator: {
+                type: 'string',
+                description: 'Separator between merged notes (default: "\\n\\n---\\n\\n")',
+                default: '\n\n---\n\n'
+              }
+            },
+            required: ['sourcePaths', 'destinationPath'],
+          },
+        },
+        {
+          name: 'split_note',
+          description: 'Split a note by headings into separate files',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sourcePath: {
+                type: 'string',
+                description: 'Path to the note to split'
+              },
+              destinationFolder: {
+                type: 'string',
+                description: 'Folder path for split notes'
+              },
+              headingLevel: {
+                type: 'number',
+                description: 'Heading level to split on (1-6, default: 1)',
+                default: 1,
+                minimum: 1,
+                maximum: 6
+              },
+              deleteSource: {
+                type: 'boolean',
+                description: 'Delete source note after splitting (default: false)',
+                default: false
+              }
+            },
+            required: ['sourcePath', 'destinationFolder'],
+          },
+        },
+        {
+          name: 'duplicate_note',
+          description: 'Create a copy of a note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              sourcePath: {
+                type: 'string',
+                description: 'Path to the note to duplicate'
+              },
+              destinationPath: {
+                type: 'string',
+                description: 'Path for the duplicated note'
+              }
+            },
+            required: ['sourcePath', 'destinationPath'],
+          },
+        },
+        {
+          name: 'append_to_note',
+          description: 'Quick append content to end of note (useful for journaling)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note'
+              },
+              content: {
+                type: 'string',
+                description: 'Content to append'
+              },
+              addTimestamp: {
+                type: 'boolean',
+                description: 'Add timestamp before content (default: false)',
+                default: false
+              }
+            },
+            required: ['path', 'content'],
+          },
+        },
+        // Configuration Management
+        {
+          name: 'get_config',
+          description: 'Get current MCP configuration (directory patterns, defaults, etc.)',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'update_config',
+          description: 'Update MCP configuration values',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              updates: {
+                type: 'object',
+                description: 'Configuration updates (e.g., {"dailyNotes.folder": "Journal/Daily"})'
+              }
+            },
+            required: ['updates'],
+          },
+        },
+        {
+          name: 'add_pattern',
+          description: 'Add a custom note pattern (e.g., project notes, book notes)',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              patternName: {
+                type: 'string',
+                description: 'Name of the pattern (e.g., "projects", "books", "meetings")'
+              },
+              folder: {
+                type: 'string',
+                description: 'Folder path for this pattern'
+              },
+              filenameFormat: {
+                type: 'string',
+                description: 'Filename format (optional, e.g., "{{title}}", "{{date}}-{{title}}")'
+              },
+              template: {
+                type: 'string',
+                description: 'Template path (optional)'
+              },
+              description: {
+                type: 'string',
+                description: 'Description of this pattern (optional)'
+              }
+            },
+            required: ['patternName', 'folder'],
+          },
+        },
+        {
+          name: 'remove_pattern',
+          description: 'Remove a custom note pattern',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              patternName: {
+                type: 'string',
+                description: 'Name of the pattern to remove'
+              }
+            },
+            required: ['patternName'],
+          },
+        },
+        {
+          name: 'list_patterns',
+          description: 'List all configured note patterns',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'create_pattern_note',
+          description: 'Create a note using a configured pattern',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              patternName: {
+                type: 'string',
+                description: 'Pattern name (e.g., "projects", "books")'
+              },
+              title: {
+                type: 'string',
+                description: 'Note title'
+              },
+              variables: {
+                type: 'object',
+                description: 'Additional template variables (optional)'
+              }
+            },
+            required: ['patternName', 'title'],
+          },
+        },
+        {
+          name: 'reset_config',
+          description: 'Reset configuration to defaults',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              confirm: {
+                type: 'boolean',
+                description: 'Confirmation flag (must be true to reset)'
+              }
+            },
+            required: ['confirm'],
+          },
+        },
+        // Attachment Management
+        {
+          name: 'list_attachments',
+          description: 'List all media/PDF files in the vault',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              fileTypes: {
+                type: 'array',
+                description: 'File extensions to filter (e.g., ["pdf", "png", "jpg"])',
+                items: {
+                  type: 'string'
+                }
+              }
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'find_unused_attachments',
+          description: 'Find orphaned attachment files not referenced in any note',
+          inputSchema: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'get_note_attachments',
+          description: 'List attachments referenced in a specific note',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              path: {
+                type: 'string',
+                description: 'Path to the note'
+              }
+            },
+            required: ['path'],
+          },
+        },
       ],
     }));
 
@@ -1407,6 +2045,79 @@ class ObsidianMcpServer {
             return await this.handleAutoBacklinkVault(request.params.arguments);
           case 'notes_insight':
             return await this.handleNotesInsight(request.params.arguments);
+          case 'list_tags':
+            return await this.handleListTags(request.params.arguments);
+          case 'add_tags':
+            return await this.handleAddTags(request.params.arguments);
+          case 'remove_tags':
+            return await this.handleRemoveTags(request.params.arguments);
+          case 'find_notes_by_tag':
+            return await this.handleFindNotesByTag(request.params.arguments);
+          case 'rename_tag':
+            return await this.handleRenameTag(request.params.arguments);
+          // Graph & Link Analysis
+          case 'get_backlinks':
+            return await this.handleGetBacklinks(request.params.arguments);
+          case 'get_outgoing_links':
+            return await this.handleGetOutgoingLinks(request.params.arguments);
+          case 'find_orphaned_notes':
+            return await this.handleFindOrphanedNotes(request.params.arguments);
+          case 'find_broken_links':
+            return await this.handleFindBrokenLinks(request.params.arguments);
+          case 'get_link_graph':
+            return await this.handleGetLinkGraph(request.params.arguments);
+          // Metadata & Frontmatter
+          case 'update_frontmatter':
+            return await this.handleUpdateFrontmatter(request.params.arguments);
+          case 'get_frontmatter':
+            return await this.handleGetFrontmatter(request.params.arguments);
+          case 'bulk_update_metadata':
+            return await this.handleBulkUpdateMetadata(request.params.arguments);
+          // Daily Notes & Templates
+          case 'create_daily_note':
+            return await this.handleCreateDailyNote(request.params.arguments);
+          case 'get_daily_note':
+            return await this.handleGetDailyNote(request.params.arguments);
+          case 'apply_template':
+            return await this.handleApplyTemplate(request.params.arguments);
+          // Analytics & Statistics
+          case 'get_note_stats':
+            return await this.handleGetNoteStats(request.params.arguments);
+          case 'get_vault_stats':
+            return await this.handleGetVaultStats(request.params.arguments);
+          case 'get_recent_notes':
+            return await this.handleGetRecentNotes(request.params.arguments);
+          // Content Operations
+          case 'merge_notes':
+            return await this.handleMergeNotes(request.params.arguments);
+          case 'split_note':
+            return await this.handleSplitNote(request.params.arguments);
+          case 'duplicate_note':
+            return await this.handleDuplicateNote(request.params.arguments);
+          case 'append_to_note':
+            return await this.handleAppendToNote(request.params.arguments);
+          // Configuration Management
+          case 'get_config':
+            return await this.handleGetConfig(request.params.arguments);
+          case 'update_config':
+            return await this.handleUpdateConfig(request.params.arguments);
+          case 'add_pattern':
+            return await this.handleAddPattern(request.params.arguments);
+          case 'remove_pattern':
+            return await this.handleRemovePattern(request.params.arguments);
+          case 'list_patterns':
+            return await this.handleListPatterns(request.params.arguments);
+          case 'create_pattern_note':
+            return await this.handleCreatePatternNote(request.params.arguments);
+          case 'reset_config':
+            return await this.handleResetConfig(request.params.arguments);
+          // Attachment Management
+          case 'list_attachments':
+            return await this.handleListAttachments(request.params.arguments);
+          case 'find_unused_attachments':
+            return await this.handleFindUnusedAttachments(request.params.arguments);
+          case 'get_note_attachments':
+            return await this.handleGetNoteAttachments(request.params.arguments);
           default:
             throw new McpError(
               ErrorCode.MethodNotFound,
@@ -1975,6 +2686,793 @@ Please provide your analysis following the framework structure:
     return insightPrompt;
   }
 
+  // Tag Management Tool Handlers
+  private async handleListTags(args: any) {
+    const sortBy = args?.sortBy || 'count';
+    const tags = await this.listAllTags();
+
+    // Sort tags
+    let sortedTags = Object.entries(tags);
+    if (sortBy === 'name') {
+      sortedTags.sort((a, b) => a[0].localeCompare(b[0]));
+    } else {
+      sortedTags.sort((a, b) => b[1] - a[1]);
+    }
+
+    // Format output
+    let output = `Tags in vault (${sortedTags.length} unique tags):\n`;
+    output += `================================\n\n`;
+
+    for (const [tag, count] of sortedTags) {
+      output += `#${tag} (${count} occurrence${count > 1 ? 's' : ''})\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleAddTags(args: any) {
+    if (!args?.path || !args?.tags) {
+      throw new Error('Path and tags are required');
+    }
+
+    if (!Array.isArray(args.tags)) {
+      throw new Error('Tags must be an array');
+    }
+
+    // Use config default for tag location
+    const location = args.location || await this.getConfigValue('defaults', 'tagLocation', 'frontmatter');
+    await this.addTagsToNote(args.path, args.tags, location);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully added tags [${args.tags.join(', ')}] to ${args.path} (location: ${location})`,
+        },
+      ],
+    };
+  }
+
+  private async handleRemoveTags(args: any) {
+    if (!args?.path || !args?.tags) {
+      throw new Error('Path and tags are required');
+    }
+
+    if (!Array.isArray(args.tags)) {
+      throw new Error('Tags must be an array');
+    }
+
+    await this.removeTagsFromNote(args.path, args.tags);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully removed tags [${args.tags.join(', ')}] from ${args.path}`,
+        },
+      ],
+    };
+  }
+
+  private async handleFindNotesByTag(args: any) {
+    if (!args?.tags) {
+      throw new Error('Tags are required');
+    }
+
+    if (!Array.isArray(args.tags)) {
+      throw new Error('Tags must be an array');
+    }
+
+    const matchAll = args.matchAll || false;
+    const results = await this.findNotesByTags(args.tags, matchAll);
+
+    let output = `Notes with tag${args.tags.length > 1 ? 's' : ''} [${args.tags.map((t: string) => `#${t}`).join(', ')}]`;
+    output += matchAll ? ' (matching all tags):\n' : ' (matching any tag):\n';
+    output += `================================\n\n`;
+
+    if (results.length === 0) {
+      output += 'No notes found.';
+    } else {
+      output += `Found ${results.length} note${results.length > 1 ? 's' : ''}:\n\n`;
+      for (const result of results) {
+        output += `- ${result.path}\n`;
+        output += `  Tags: ${result.tags.map((t: string) => `#${t}`).join(', ')}\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleRenameTag(args: any) {
+    if (!args?.oldTag || !args?.newTag) {
+      throw new Error('oldTag and newTag are required');
+    }
+
+    const dryRun = args.dryRun !== undefined ? args.dryRun : true;
+    const result = await this.renameTagInVault(args.oldTag, args.newTag, dryRun);
+
+    let output = `Tag Rename: #${args.oldTag} → #${args.newTag}\n`;
+    output += `================================\n\n`;
+    output += `Notes affected: ${result.affectedNotes.length}\n`;
+    output += `Total replacements: ${result.totalReplacements}\n\n`;
+
+    if (result.affectedNotes.length > 0) {
+      output += 'Affected notes:\n';
+      for (const note of result.affectedNotes) {
+        output += `- ${note}\n`;
+      }
+    }
+
+    if (dryRun) {
+      output += `\nNote: This was a dry run. No changes were actually made.\n`;
+      output += `To apply these changes, run the tool again with dryRun: false\n`;
+    } else {
+      output += `\nChanges have been applied successfully!\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  // Graph & Link Analysis Tool Handlers
+  private async handleGetBacklinks(args: any) {
+    if (!args?.notePath) {
+      throw new Error('notePath is required');
+    }
+
+    const backlinks = await this.getBacklinks(args.notePath);
+
+    let output = `Backlinks for "${args.notePath}":\n`;
+    output += `================================\n\n`;
+
+    if (backlinks.length === 0) {
+      output += 'No backlinks found.';
+    } else {
+      output += `Found ${backlinks.length} note${backlinks.length > 1 ? 's' : ''} linking to this note:\n\n`;
+      for (const link of backlinks) {
+        output += `- ${link.sourcePath}\n`;
+        output += `  Link text: "${link.linkText}"\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleGetOutgoingLinks(args: any) {
+    if (!args?.notePath) {
+      throw new Error('notePath is required');
+    }
+
+    const links = await this.getOutgoingLinks(args.notePath);
+
+    let output = `Outgoing links from "${args.notePath}":\n`;
+    output += `================================\n\n`;
+
+    if (links.length === 0) {
+      output += 'No outgoing links found.';
+    } else {
+      output += `Found ${links.length} link${links.length > 1 ? 's' : ''}:\n\n`;
+      for (const link of links) {
+        output += `- [[${link.targetPath}]]`;
+        if (link.linkText !== link.targetPath) {
+          output += ` (displayed as: "${link.linkText}")`;
+        }
+        output += `\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleFindOrphanedNotes(args: any) {
+    const orphans = await this.findOrphanedNotes();
+
+    let output = `Orphaned Notes:\n`;
+    output += `================================\n\n`;
+
+    if (orphans.length === 0) {
+      output += 'No orphaned notes found. All notes are connected!';
+    } else {
+      output += `Found ${orphans.length} orphaned note${orphans.length > 1 ? 's' : ''}:\n\n`;
+      for (const orphan of orphans) {
+        output += `- ${orphan}\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleFindBrokenLinks(args: any) {
+    const brokenLinks = await this.findBrokenLinks();
+
+    let output = `Broken Links:\n`;
+    output += `================================\n\n`;
+
+    if (brokenLinks.length === 0) {
+      output += 'No broken links found. All links are valid!';
+    } else {
+      output += `Found ${brokenLinks.length} broken link${brokenLinks.length > 1 ? 's' : ''}:\n\n`;
+      for (const broken of brokenLinks) {
+        output += `In "${broken.sourcePath}":\n`;
+        output += `  - [[${broken.targetPath}]] (missing)\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleGetLinkGraph(args: any) {
+    const includeOrphans = args?.includeOrphans !== undefined ? args.includeOrphans : true;
+    const graph = await this.getLinkGraph(includeOrphans);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(graph, null, 2),
+        },
+      ],
+    };
+  }
+
+  // Metadata & Frontmatter Tool Handlers
+  private async handleUpdateFrontmatter(args: any) {
+    if (!args?.path || !args?.updates) {
+      throw new Error('path and updates are required');
+    }
+
+    await this.updateFrontmatter(args.path, args.updates);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully updated frontmatter in ${args.path}`,
+        },
+      ],
+    };
+  }
+
+  private async handleGetFrontmatter(args: any) {
+    if (!args?.path) {
+      throw new Error('path is required');
+    }
+
+    const frontmatter = await this.getFrontmatter(args.path);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(frontmatter, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async handleBulkUpdateMetadata(args: any) {
+    if (!args?.paths || !args?.updates) {
+      throw new Error('paths and updates are required');
+    }
+
+    if (!Array.isArray(args.paths)) {
+      throw new Error('paths must be an array');
+    }
+
+    const results = await this.bulkUpdateMetadata(args.paths, args.updates);
+
+    let output = `Bulk Metadata Update:\n`;
+    output += `================================\n\n`;
+    output += `Successfully updated: ${results.success.length} notes\n`;
+    output += `Failed: ${results.failed.length} notes\n\n`;
+
+    if (results.failed.length > 0) {
+      output += 'Failed notes:\n';
+      for (const fail of results.failed) {
+        output += `- ${fail.path}: ${fail.error}\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  // Daily Notes & Templates Tool Handlers
+  private async handleCreateDailyNote(args: any) {
+    // Use config values as defaults
+    const folder = args?.folder || await this.getConfigValue('dailyNotes', 'folder', 'Daily Notes');
+    const template = args?.template || await this.getConfigValue('dailyNotes', 'template', undefined);
+    const dateFormat = args?.dateFormat || await this.getConfigValue('dailyNotes', 'dateFormat', 'YYYY-MM-DD');
+
+    const result = await this.createDailyNote(folder, template, dateFormat);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `${result.created ? 'Created' : 'Retrieved'} daily note: ${result.path}`,
+        },
+      ],
+    };
+  }
+
+  private async handleGetDailyNote(args: any) {
+    if (!args?.date) {
+      throw new Error('date is required');
+    }
+
+    // Use config values as defaults
+    const folder = args?.folder || await this.getConfigValue('dailyNotes', 'folder', 'Daily Notes');
+    const notePath = await this.getDailyNote(args.date, folder);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Daily note path: ${notePath}`,
+        },
+      ],
+    };
+  }
+
+  private async handleApplyTemplate(args: any) {
+    if (!args?.notePath || !args?.templatePath) {
+      throw new Error('notePath and templatePath are required');
+    }
+
+    const variables = args?.variables || {};
+    await this.applyTemplate(args.notePath, args.templatePath, variables);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully applied template to ${args.notePath}`,
+        },
+      ],
+    };
+  }
+
+  // Analytics & Statistics Tool Handlers
+  private async handleGetNoteStats(args: any) {
+    if (!args?.path) {
+      throw new Error('path is required');
+    }
+
+    const stats = await this.getNoteStats(args.path);
+
+    let output = `Statistics for "${args.path}":\n`;
+    output += `================================\n\n`;
+    output += `Words: ${stats.wordCount}\n`;
+    output += `Characters: ${stats.charCount}\n`;
+    output += `Reading time: ~${stats.readingTime} minute${stats.readingTime > 1 ? 's' : ''}\n`;
+    output += `Links: ${stats.linkCount}\n`;
+    output += `Tags: ${stats.tagCount}\n`;
+    output += `Headings: ${stats.headingCount}\n`;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleGetVaultStats(args: any) {
+    const stats = await this.getVaultStats();
+
+    let output = `Vault Statistics:\n`;
+    output += `================================\n\n`;
+    output += `Total notes: ${stats.totalNotes}\n`;
+    output += `Total attachments: ${stats.totalAttachments}\n`;
+    output += `Total words: ${stats.totalWords}\n`;
+    output += `Total links: ${stats.totalLinks}\n`;
+    output += `Unique tags: ${stats.uniqueTags}\n`;
+    output += `Vault size: ${stats.vaultSize}\n`;
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleGetRecentNotes(args: any) {
+    const limit = args?.limit || 10;
+    const sortBy = args?.sortBy || 'modified';
+
+    const notes = await this.getRecentNotes(limit, sortBy);
+
+    let output = `Recently ${sortBy} notes (${limit} max):\n`;
+    output += `================================\n\n`;
+
+    for (const note of notes) {
+      output += `- ${note.path}\n`;
+      output += `  ${sortBy === 'modified' ? 'Modified' : 'Created'}: ${note.time}\n`;
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  // Content Operations Tool Handlers
+  private async handleMergeNotes(args: any) {
+    if (!args?.sourcePaths || !args?.destinationPath) {
+      throw new Error('sourcePaths and destinationPath are required');
+    }
+
+    if (!Array.isArray(args.sourcePaths)) {
+      throw new Error('sourcePaths must be an array');
+    }
+
+    const deleteSources = args?.deleteSources || false;
+    const separator = args?.separator || '\n\n---\n\n';
+
+    await this.mergeNotes(args.sourcePaths, args.destinationPath, deleteSources, separator);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully merged ${args.sourcePaths.length} notes into ${args.destinationPath}${deleteSources ? ' (sources deleted)' : ''}`,
+        },
+      ],
+    };
+  }
+
+  private async handleSplitNote(args: any) {
+    if (!args?.sourcePath || !args?.destinationFolder) {
+      throw new Error('sourcePath and destinationFolder are required');
+    }
+
+    const headingLevel = args?.headingLevel || 1;
+    const deleteSource = args?.deleteSource || false;
+
+    const result = await this.splitNote(args.sourcePath, args.destinationFolder, headingLevel, deleteSource);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully split "${args.sourcePath}" into ${result.createdNotes.length} notes${deleteSource ? ' (source deleted)' : ''}`,
+        },
+      ],
+    };
+  }
+
+  private async handleDuplicateNote(args: any) {
+    if (!args?.sourcePath || !args?.destinationPath) {
+      throw new Error('sourcePath and destinationPath are required');
+    }
+
+    await this.duplicateNote(args.sourcePath, args.destinationPath);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully duplicated "${args.sourcePath}" to "${args.destinationPath}"`,
+        },
+      ],
+    };
+  }
+
+  private async handleAppendToNote(args: any) {
+    if (!args?.path || !args?.content) {
+      throw new Error('path and content are required');
+    }
+
+    const addTimestamp = args?.addTimestamp || false;
+    await this.appendToNote(args.path, args.content, addTimestamp);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Successfully appended content to ${args.path}`,
+        },
+      ],
+    };
+  }
+
+  // Configuration Management Tool Handlers
+  private async handleGetConfig(args: any) {
+    const config = await this.loadConfig();
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(config, null, 2),
+        },
+      ],
+    };
+  }
+
+  private async handleUpdateConfig(args: any) {
+    if (!args?.updates) {
+      throw new Error('updates are required');
+    }
+
+    await this.updateConfigValues(args.updates);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Configuration updated successfully',
+        },
+      ],
+    };
+  }
+
+  private async handleAddPattern(args: any) {
+    if (!args?.patternName || !args?.folder) {
+      throw new Error('patternName and folder are required');
+    }
+
+    await this.addNotePattern(
+      args.patternName,
+      args.folder,
+      args.filenameFormat,
+      args.template,
+      args.description
+    );
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Pattern "${args.patternName}" added successfully`,
+        },
+      ],
+    };
+  }
+
+  private async handleRemovePattern(args: any) {
+    if (!args?.patternName) {
+      throw new Error('patternName is required');
+    }
+
+    await this.removeNotePattern(args.patternName);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Pattern "${args.patternName}" removed successfully`,
+        },
+      ],
+    };
+  }
+
+  private async handleListPatterns(args: any) {
+    const config = await this.loadConfig();
+    const patterns = config.patterns || {};
+
+    let output = 'Configured Note Patterns:\n';
+    output += '================================\n\n';
+
+    if (Object.keys(patterns).length === 0) {
+      output += 'No custom patterns configured.\n\n';
+      output += 'Use add_pattern to create custom patterns for:\n';
+      output += '- Project notes\n';
+      output += '- Book notes\n';
+      output += '- Meeting notes\n';
+      output += '- Any other note type you want to organize\n';
+    } else {
+      for (const [name, pattern] of Object.entries(patterns)) {
+        output += `## ${name}\n`;
+        output += `Folder: ${pattern.folder}\n`;
+        if (pattern.filenameFormat) {
+          output += `Filename Format: ${pattern.filenameFormat}\n`;
+        }
+        if (pattern.template) {
+          output += `Template: ${pattern.template}\n`;
+        }
+        if (pattern.description) {
+          output += `Description: ${pattern.description}\n`;
+        }
+        output += '\n';
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleCreatePatternNote(args: any) {
+    if (!args?.patternName || !args?.title) {
+      throw new Error('patternName and title are required');
+    }
+
+    const notePath = await this.createNoteFromPattern(
+      args.patternName,
+      args.title,
+      args.variables || {}
+    );
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Note created at: ${notePath}`,
+        },
+      ],
+    };
+  }
+
+  private async handleResetConfig(args: any) {
+    if (!args?.confirm || args.confirm !== true) {
+      throw new Error('Confirmation required. Set confirm: true to reset configuration');
+    }
+
+    await this.resetConfigToDefaults();
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: 'Configuration reset to defaults successfully',
+        },
+      ],
+    };
+  }
+
+  // Attachment Management Tool Handlers
+  private async handleListAttachments(args: any) {
+    // Use config default for file types
+    const defaultTypes = await this.getConfigValue('attachments', 'defaultTypes', ['pdf', 'png', 'jpg', 'jpeg', 'gif']);
+    const fileTypes = args?.fileTypes || defaultTypes;
+    const attachments = await this.listAttachments(fileTypes);
+
+    let output = `Attachments in vault:\n`;
+    output += `================================\n\n`;
+
+    if (attachments.length === 0) {
+      output += 'No attachments found.';
+    } else {
+      output += `Found ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}:\n\n`;
+      for (const attachment of attachments) {
+        output += `- ${attachment.path} (${attachment.size})\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleFindUnusedAttachments(args: any) {
+    const unused = await this.findUnusedAttachments();
+
+    let output = `Unused Attachments:\n`;
+    output += `================================\n\n`;
+
+    if (unused.length === 0) {
+      output += 'No unused attachments found. All attachments are referenced!';
+    } else {
+      output += `Found ${unused.length} unused attachment${unused.length > 1 ? 's' : ''}:\n\n`;
+      for (const attachment of unused) {
+        output += `- ${attachment}\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
+  private async handleGetNoteAttachments(args: any) {
+    if (!args?.path) {
+      throw new Error('path is required');
+    }
+
+    const attachments = await this.getNoteAttachments(args.path);
+
+    let output = `Attachments in "${args.path}":\n`;
+    output += `================================\n\n`;
+
+    if (attachments.length === 0) {
+      output += 'No attachments found.';
+    } else {
+      output += `Found ${attachments.length} attachment${attachments.length > 1 ? 's' : ''}:\n\n`;
+      for (const attachment of attachments) {
+        output += `- ${attachment}\n`;
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: output,
+        },
+      ],
+    };
+  }
+
   // Helper method to load TRILEMMA-PRINCIPLES prompt
   private async loadTrilemmaPrompt(): Promise<string> {
     // Embedded complete TRILEMMA-PRINCIPLES framework prompt
@@ -2534,6 +4032,1377 @@ Your goal is to help users see beyond apparent limitations and discover innovati
       // Delete empty directory
       fs.rmdirSync(folderPath);
     }
+  }
+
+  // Tag Management Implementation Methods
+
+  /**
+   * Extract tags from note content (both inline #tags and frontmatter tags)
+   */
+  private extractTagsFromContent(content: string): string[] {
+    const tags = new Set<string>();
+
+    // Extract frontmatter tags
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (frontmatterMatch) {
+      const frontmatter = frontmatterMatch[1];
+
+      // Match tags in different formats: tags: [tag1, tag2] or tags: tag1, tag2
+      const tagsMatch = frontmatter.match(/^tags:\s*\[?([^\]\n]+)\]?$/m);
+      if (tagsMatch) {
+        const tagString = tagsMatch[1];
+        const frontmatterTags = tagString
+          .split(',')
+          .map(t => t.trim().replace(/^["']|["']$/g, '').replace(/^#/, ''))
+          .filter(t => t.length > 0);
+        frontmatterTags.forEach(tag => tags.add(tag));
+      }
+
+      // Also match tag: value format
+      const singleTagMatch = frontmatter.match(/^tag:\s*(.+)$/m);
+      if (singleTagMatch) {
+        const tag = singleTagMatch[1].trim().replace(/^["']|["']$/g, '').replace(/^#/, '');
+        if (tag.length > 0) {
+          tags.add(tag);
+        }
+      }
+    }
+
+    // Extract inline tags (#tag format)
+    const inlineTagRegex = /#([a-zA-Z0-9_\/-]+)/g;
+    let match;
+    while ((match = inlineTagRegex.exec(content)) !== null) {
+      tags.add(match[1]);
+    }
+
+    return Array.from(tags);
+  }
+
+  /**
+   * List all tags in the vault with their occurrence counts
+   */
+  private async listAllTags(): Promise<{ [tag: string]: number }> {
+    const files = await this.listVaultFiles();
+    const tagCounts: { [tag: string]: number } = {};
+
+    for (const file of files) {
+      // Only process markdown files
+      if (!file.endsWith('.md')) {
+        continue;
+      }
+
+      try {
+        const content = await this.readNote(file);
+        const tags = this.extractTagsFromContent(content);
+
+        for (const tag of tags) {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    return tagCounts;
+  }
+
+  /**
+   * Add tags to a note (frontmatter or inline)
+   */
+  private async addTagsToNote(notePath: string, tags: string[], location: string): Promise<void> {
+    const content = await this.readNote(notePath);
+    let newContent = content;
+
+    // Normalize tags (remove # prefix if present)
+    const normalizedTags = tags.map(t => t.replace(/^#/, ''));
+
+    if (location === 'frontmatter' || location === 'both') {
+      newContent = this.addTagsToFrontmatter(newContent, normalizedTags);
+    }
+
+    if (location === 'inline' || location === 'both') {
+      newContent = this.addTagsInline(newContent, normalizedTags);
+    }
+
+    // Write back the modified content
+    await this.createNote(notePath, newContent);
+  }
+
+  /**
+   * Add tags to frontmatter section
+   */
+  private addTagsToFrontmatter(content: string, tags: string[]): string {
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+
+    if (frontmatterMatch) {
+      // Frontmatter exists
+      let frontmatter = frontmatterMatch[1];
+      const existingTagsMatch = frontmatter.match(/^tags:\s*\[?([^\]\n]+)\]?$/m);
+
+      if (existingTagsMatch) {
+        // Tags field exists, merge new tags
+        const existingTags = existingTagsMatch[1]
+          .split(',')
+          .map(t => t.trim().replace(/^["']|["']$/g, '').replace(/^#/, ''))
+          .filter(t => t.length > 0);
+
+        const allTags = Array.from(new Set([...existingTags, ...tags]));
+        const newTagsLine = `tags: [${allTags.join(', ')}]`;
+
+        frontmatter = frontmatter.replace(/^tags:\s*\[?([^\]\n]+)\]?$/m, newTagsLine);
+      } else {
+        // Tags field doesn't exist, add it
+        const newTagsLine = `tags: [${tags.join(', ')}]`;
+        frontmatter += `\n${newTagsLine}`;
+      }
+
+      return content.replace(/^---\n[\s\S]*?\n---/, `---\n${frontmatter}\n---`);
+    } else {
+      // No frontmatter, create one
+      const newFrontmatter = `---\ntags: [${tags.join(', ')}]\n---\n\n`;
+      return newFrontmatter + content;
+    }
+  }
+
+  /**
+   * Add tags inline at the end of the note
+   */
+  private addTagsInline(content: string, tags: string[]): string {
+    const inlineTags = tags.map(t => `#${t}`).join(' ');
+    return content.trimEnd() + `\n\n${inlineTags}`;
+  }
+
+  /**
+   * Remove tags from a note
+   */
+  private async removeTagsFromNote(notePath: string, tags: string[]): Promise<void> {
+    const content = await this.readNote(notePath);
+    let newContent = content;
+
+    // Normalize tags (remove # prefix if present)
+    const normalizedTags = tags.map(t => t.replace(/^#/, ''));
+
+    // Remove from frontmatter
+    newContent = this.removeTagsFromFrontmatter(newContent, normalizedTags);
+
+    // Remove inline tags
+    newContent = this.removeTagsInline(newContent, normalizedTags);
+
+    // Write back the modified content
+    await this.createNote(notePath, newContent);
+  }
+
+  /**
+   * Remove tags from frontmatter section
+   */
+  private removeTagsFromFrontmatter(content: string, tags: string[]): string {
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+
+    if (frontmatterMatch) {
+      let frontmatter = frontmatterMatch[1];
+      const existingTagsMatch = frontmatter.match(/^tags:\s*\[?([^\]\n]+)\]?$/m);
+
+      if (existingTagsMatch) {
+        const existingTags = existingTagsMatch[1]
+          .split(',')
+          .map(t => t.trim().replace(/^["']|["']$/g, '').replace(/^#/, ''))
+          .filter(t => t.length > 0);
+
+        const remainingTags = existingTags.filter(t => !tags.includes(t));
+
+        if (remainingTags.length > 0) {
+          const newTagsLine = `tags: [${remainingTags.join(', ')}]`;
+          frontmatter = frontmatter.replace(/^tags:\s*\[?([^\]\n]+)\]?$/m, newTagsLine);
+        } else {
+          // Remove the tags line entirely if no tags remain
+          frontmatter = frontmatter.replace(/^tags:\s*\[?([^\]\n]+)\]?$/m, '').trim();
+        }
+
+        return content.replace(/^---\n[\s\S]*?\n---/, `---\n${frontmatter}\n---`);
+      }
+    }
+
+    return content;
+  }
+
+  /**
+   * Remove inline tags from content
+   */
+  private removeTagsInline(content: string, tags: string[]): string {
+    let newContent = content;
+
+    for (const tag of tags) {
+      // Remove #tag with word boundaries
+      const regex = new RegExp(`\\s*#${escapeRegExp(tag)}\\b`, 'g');
+      newContent = newContent.replace(regex, '');
+    }
+
+    return newContent;
+  }
+
+  /**
+   * Find notes by tags
+   */
+  private async findNotesByTags(tags: string[], matchAll: boolean): Promise<{ path: string; tags: string[] }[]> {
+    const files = await this.listVaultFiles();
+    const results: { path: string; tags: string[] }[] = [];
+
+    // Normalize search tags
+    const normalizedSearchTags = tags.map(t => t.replace(/^#/, '').toLowerCase());
+
+    for (const file of files) {
+      // Only process markdown files
+      if (!file.endsWith('.md')) {
+        continue;
+      }
+
+      try {
+        const content = await this.readNote(file);
+        const noteTags = this.extractTagsFromContent(content);
+        const normalizedNoteTags = noteTags.map(t => t.toLowerCase());
+
+        let matches = false;
+
+        if (matchAll) {
+          // All search tags must be present
+          matches = normalizedSearchTags.every(searchTag =>
+            normalizedNoteTags.includes(searchTag)
+          );
+        } else {
+          // Any search tag must be present
+          matches = normalizedSearchTags.some(searchTag =>
+            normalizedNoteTags.includes(searchTag)
+          );
+        }
+
+        if (matches) {
+          results.push({
+            path: file,
+            tags: noteTags
+          });
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Rename a tag across all notes in the vault
+   */
+  private async renameTagInVault(
+    oldTag: string,
+    newTag: string,
+    dryRun: boolean
+  ): Promise<{ affectedNotes: string[]; totalReplacements: number }> {
+    const files = await this.listVaultFiles();
+    const affectedNotes: string[] = [];
+    let totalReplacements = 0;
+
+    // Normalize tags
+    const normalizedOldTag = oldTag.replace(/^#/, '');
+    const normalizedNewTag = newTag.replace(/^#/, '');
+
+    for (const file of files) {
+      // Only process markdown files
+      if (!file.endsWith('.md')) {
+        continue;
+      }
+
+      try {
+        const content = await this.readNote(file);
+        let newContent = content;
+        let replacementCount = 0;
+
+        // Replace in frontmatter
+        const frontmatterResult = this.replaceTagInFrontmatter(
+          newContent,
+          normalizedOldTag,
+          normalizedNewTag
+        );
+        newContent = frontmatterResult.content;
+        replacementCount += frontmatterResult.count;
+
+        // Replace inline tags
+        const inlineResult = this.replaceTagInline(
+          newContent,
+          normalizedOldTag,
+          normalizedNewTag
+        );
+        newContent = inlineResult.content;
+        replacementCount += inlineResult.count;
+
+        if (replacementCount > 0) {
+          affectedNotes.push(file);
+          totalReplacements += replacementCount;
+
+          if (!dryRun) {
+            await this.createNote(file, newContent);
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to process file ${file}:`, error);
+      }
+    }
+
+    return { affectedNotes, totalReplacements };
+  }
+
+  /**
+   * Replace tag in frontmatter
+   */
+  private replaceTagInFrontmatter(
+    content: string,
+    oldTag: string,
+    newTag: string
+  ): { content: string; count: number } {
+    let count = 0;
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+
+    if (frontmatterMatch) {
+      let frontmatter = frontmatterMatch[1];
+      const existingTagsMatch = frontmatter.match(/^tags:\s*\[?([^\]\n]+)\]?$/m);
+
+      if (existingTagsMatch) {
+        const tagsString = existingTagsMatch[1];
+        const tags = tagsString
+          .split(',')
+          .map(t => {
+            const trimmed = t.trim().replace(/^["']|["']$/g, '').replace(/^#/, '');
+            if (trimmed.toLowerCase() === oldTag.toLowerCase()) {
+              count++;
+              return newTag;
+            }
+            return trimmed;
+          });
+
+        const newTagsLine = `tags: [${tags.join(', ')}]`;
+        frontmatter = frontmatter.replace(/^tags:\s*\[?([^\]\n]+)\]?$/m, newTagsLine);
+
+        return {
+          content: content.replace(/^---\n[\s\S]*?\n---/, `---\n${frontmatter}\n---`),
+          count
+        };
+      }
+    }
+
+    return { content, count };
+  }
+
+  /**
+   * Replace inline tag
+   */
+  private replaceTagInline(
+    content: string,
+    oldTag: string,
+    newTag: string
+  ): { content: string; count: number } {
+    let count = 0;
+
+    // Create regex for inline tags with word boundaries
+    const regex = new RegExp(`#${escapeRegExp(oldTag)}\\b`, 'gi');
+
+    const newContent = content.replace(regex, (match) => {
+      count++;
+      return `#${newTag}`;
+    });
+
+    return { content: newContent, count };
+  }
+
+  // Graph & Link Analysis Implementation Methods
+
+  /**
+   * Extract wikilinks from content
+   */
+  private extractLinks(content: string): { targetPath: string; linkText: string }[] {
+    const links: { targetPath: string; linkText: string }[] = [];
+
+    // Match wikilinks: [[target]] or [[target|display text]]
+    const wikilinkRegex = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+    let match;
+
+    while ((match = wikilinkRegex.exec(content)) !== null) {
+      const targetPath = match[1].trim();
+      const linkText = match[2] ? match[2].trim() : targetPath;
+      links.push({ targetPath, linkText });
+    }
+
+    return links;
+  }
+
+  /**
+   * Get all notes that link to a specific note
+   */
+  private async getBacklinks(notePath: string): Promise<{ sourcePath: string; linkText: string }[]> {
+    const files = await this.listVaultFiles();
+    const backlinks: { sourcePath: string; linkText: string }[] = [];
+
+    // Normalize the note path for comparison (remove .md extension if present)
+    const normalizedNotePath = notePath.replace(/\.md$/, '');
+    const noteBasename = path.basename(normalizedNotePath);
+
+    for (const file of files) {
+      if (!file.endsWith('.md')) continue;
+
+      try {
+        const content = await this.readNote(file);
+        const links = this.extractLinks(content);
+
+        for (const link of links) {
+          // Match both full path and basename
+          const normalizedLink = link.targetPath.replace(/\.md$/, '');
+          if (normalizedLink === normalizedNotePath || normalizedLink === noteBasename) {
+            backlinks.push({
+              sourcePath: file,
+              linkText: link.linkText
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    return backlinks;
+  }
+
+  /**
+   * Get all outgoing links from a note
+   */
+  private async getOutgoingLinks(notePath: string): Promise<{ targetPath: string; linkText: string }[]> {
+    const content = await this.readNote(notePath);
+    return this.extractLinks(content);
+  }
+
+  /**
+   * Find orphaned notes (no incoming or outgoing links)
+   */
+  private async findOrphanedNotes(): Promise<string[]> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+    const orphans: string[] = [];
+
+    // Build link graph
+    const hasOutgoingLinks = new Set<string>();
+    const hasIncomingLinks = new Set<string>();
+
+    for (const file of mdFiles) {
+      try {
+        const content = await this.readNote(file);
+        const links = this.extractLinks(content);
+
+        if (links.length > 0) {
+          hasOutgoingLinks.add(file);
+
+          // Mark targets as having incoming links
+          for (const link of links) {
+            const targetPath = link.targetPath.replace(/\.md$/, '');
+            // Try to find matching file
+            for (const f of mdFiles) {
+              const fBasename = path.basename(f, '.md');
+              const fPath = f.replace(/\.md$/, '');
+              if (fPath === targetPath || fBasename === targetPath) {
+                hasIncomingLinks.add(f);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    // Find notes with no links at all
+    for (const file of mdFiles) {
+      if (!hasOutgoingLinks.has(file) && !hasIncomingLinks.has(file)) {
+        orphans.push(file);
+      }
+    }
+
+    return orphans;
+  }
+
+  /**
+   * Find broken wikilinks
+   */
+  private async findBrokenLinks(): Promise<{ sourcePath: string; targetPath: string }[]> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+    const brokenLinks: { sourcePath: string; targetPath: string }[] = [];
+
+    // Create set of all note paths (without .md extension) and basenames
+    const existingNotes = new Set<string>();
+    for (const file of mdFiles) {
+      existingNotes.add(file.replace(/\.md$/, ''));
+      existingNotes.add(path.basename(file, '.md'));
+    }
+
+    for (const file of mdFiles) {
+      try {
+        const content = await this.readNote(file);
+        const links = this.extractLinks(content);
+
+        for (const link of links) {
+          const targetPath = link.targetPath.replace(/\.md$/, '');
+          if (!existingNotes.has(targetPath)) {
+            brokenLinks.push({
+              sourcePath: file,
+              targetPath: link.targetPath
+            });
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    return brokenLinks;
+  }
+
+  /**
+   * Generate graph data for visualization
+   */
+  private async getLinkGraph(includeOrphans: boolean): Promise<{
+    nodes: { id: string; label: string }[];
+    edges: { source: string; target: string }[];
+  }> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+
+    const nodes: { id: string; label: string }[] = [];
+    const edges: { source: string; target: string }[] = [];
+    const nodeSet = new Set<string>();
+
+    // Build graph
+    for (const file of mdFiles) {
+      try {
+        const content = await this.readNote(file);
+        const links = this.extractLinks(content);
+
+        // Add source node
+        if (!nodeSet.has(file)) {
+          nodes.push({ id: file, label: path.basename(file, '.md') });
+          nodeSet.add(file);
+        }
+
+        // Add edges and target nodes
+        for (const link of links) {
+          // Find target file
+          let targetFile: string | null = null;
+          const targetPath = link.targetPath.replace(/\.md$/, '');
+
+          for (const f of mdFiles) {
+            const fBasename = path.basename(f, '.md');
+            const fPath = f.replace(/\.md$/, '');
+            if (fPath === targetPath || fBasename === targetPath) {
+              targetFile = f;
+              break;
+            }
+          }
+
+          if (targetFile) {
+            if (!nodeSet.has(targetFile)) {
+              nodes.push({ id: targetFile, label: path.basename(targetFile, '.md') });
+              nodeSet.add(targetFile);
+            }
+            edges.push({ source: file, target: targetFile });
+          }
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    // Add orphaned nodes if requested
+    if (includeOrphans) {
+      for (const file of mdFiles) {
+        if (!nodeSet.has(file)) {
+          nodes.push({ id: file, label: path.basename(file, '.md') });
+        }
+      }
+    }
+
+    return { nodes, edges };
+  }
+
+  // Metadata & Frontmatter Implementation Methods
+
+  /**
+   * Parse frontmatter from content
+   */
+  private parseFrontmatter(content: string): { [key: string]: any } | null {
+    const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!frontmatterMatch) return null;
+
+    const frontmatter = frontmatterMatch[1];
+    const result: { [key: string]: any } = {};
+
+    // Simple YAML parser (handles basic key: value pairs)
+    const lines = frontmatter.split('\n');
+    for (const line of lines) {
+      const match = line.match(/^([^:]+):\s*(.*)$/);
+      if (match) {
+        const key = match[1].trim();
+        let value: any = match[2].trim();
+
+        // Parse arrays
+        if (value.startsWith('[') && value.endsWith(']')) {
+          value = value.slice(1, -1).split(',').map((v: string) => v.trim().replace(/^["']|["']$/g, ''));
+        }
+        // Parse booleans
+        else if (value === 'true') value = true;
+        else if (value === 'false') value = false;
+        // Remove quotes
+        else if (value.startsWith('"') && value.endsWith('"')) {
+          value = value.slice(1, -1);
+        } else if (value.startsWith("'") && value.endsWith("'")) {
+          value = value.slice(1, -1);
+        }
+
+        result[key] = value;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Serialize frontmatter to string
+   */
+  private serializeFrontmatter(frontmatter: { [key: string]: any }): string {
+    let result = '';
+
+    for (const [key, value] of Object.entries(frontmatter)) {
+      if (Array.isArray(value)) {
+        result += `${key}: [${value.join(', ')}]\n`;
+      } else if (typeof value === 'string') {
+        result += `${key}: ${value}\n`;
+      } else {
+        result += `${key}: ${value}\n`;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Update frontmatter in a note
+   */
+  private async updateFrontmatter(notePath: string, updates: { [key: string]: any }): Promise<void> {
+    const content = await this.readNote(notePath);
+    let frontmatter = this.parseFrontmatter(content) || {};
+
+    // Apply updates (null values delete properties)
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) {
+        delete frontmatter[key];
+      } else {
+        frontmatter[key] = value;
+      }
+    }
+
+    // Rebuild content
+    let newContent = '';
+    const contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n*/, '');
+
+    if (Object.keys(frontmatter).length > 0) {
+      newContent = `---\n${this.serializeFrontmatter(frontmatter)}---\n\n${contentWithoutFrontmatter}`;
+    } else {
+      newContent = contentWithoutFrontmatter;
+    }
+
+    await this.createNote(notePath, newContent);
+  }
+
+  /**
+   * Get frontmatter from a note
+   */
+  private async getFrontmatter(notePath: string): Promise<{ [key: string]: any }> {
+    const content = await this.readNote(notePath);
+    return this.parseFrontmatter(content) || {};
+  }
+
+  /**
+   * Bulk update frontmatter across multiple notes
+   */
+  private async bulkUpdateMetadata(
+    paths: string[],
+    updates: { [key: string]: any }
+  ): Promise<{ success: string[]; failed: { path: string; error: string }[] }> {
+    const success: string[] = [];
+    const failed: { path: string; error: string }[] = [];
+
+    for (const notePath of paths) {
+      try {
+        await this.updateFrontmatter(notePath, updates);
+        success.push(notePath);
+      } catch (error) {
+        failed.push({
+          path: notePath,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    return { success, failed };
+  }
+
+  // Daily Notes & Templates Implementation Methods
+
+  /**
+   * Format date according to format string (simple implementation)
+   */
+  private formatDate(date: Date, format: string): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return format
+      .replace('YYYY', String(year))
+      .replace('MM', month)
+      .replace('DD', day);
+  }
+
+  /**
+   * Create or get today's daily note
+   */
+  private async createDailyNote(
+    folder: string,
+    template?: string,
+    dateFormat: string = 'YYYY-MM-DD'
+  ): Promise<{ path: string; created: boolean }> {
+    const today = new Date();
+    const filename = this.formatDate(today, dateFormat) + '.md';
+    const notePath = path.join(folder, filename);
+
+    try {
+      // Check if note already exists
+      await this.readNote(notePath);
+      return { path: notePath, created: false };
+    } catch (error) {
+      // Note doesn't exist, create it
+      const content = template || `# ${this.formatDate(today, dateFormat)}\n\n`;
+      await this.createNote(notePath, content);
+      return { path: notePath, created: true };
+    }
+  }
+
+  /**
+   * Get daily note for a specific date
+   */
+  private async getDailyNote(date: string, folder: string): Promise<string> {
+    const filename = date + '.md';
+    const notePath = path.join(folder, filename);
+
+    // Check if note exists
+    await this.readNote(notePath); // Will throw if doesn't exist
+
+    return notePath;
+  }
+
+  /**
+   * Apply template to a note
+   */
+  private async applyTemplate(
+    notePath: string,
+    templatePath: string,
+    variables: { [key: string]: string }
+  ): Promise<void> {
+    let templateContent = await this.readNote(templatePath);
+
+    // Replace variables
+    for (const [key, value] of Object.entries(variables)) {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      templateContent = templateContent.replace(regex, value);
+    }
+
+    // Add common default variables
+    const now = new Date();
+    templateContent = templateContent
+      .replace(/\{\{date\}\}/g, this.formatDate(now, 'YYYY-MM-DD'))
+      .replace(/\{\{time\}\}/g, now.toLocaleTimeString())
+      .replace(/\{\{title\}\}/g, path.basename(notePath, '.md'));
+
+    await this.createNote(notePath, templateContent);
+  }
+
+  // Analytics & Statistics Implementation Methods
+
+  /**
+   * Get statistics for a specific note
+   */
+  private async getNoteStats(notePath: string): Promise<{
+    wordCount: number;
+    charCount: number;
+    readingTime: number;
+    linkCount: number;
+    tagCount: number;
+    headingCount: number;
+  }> {
+    const content = await this.readNote(notePath);
+
+    // Remove frontmatter for accurate counting
+    const contentWithoutFrontmatter = content.replace(/^---\n[\s\S]*?\n---\n*/, '');
+
+    // Word count
+    const words = contentWithoutFrontmatter.trim().split(/\s+/);
+    const wordCount = words.filter(w => w.length > 0).length;
+
+    // Character count
+    const charCount = contentWithoutFrontmatter.length;
+
+    // Reading time (average 200 words per minute)
+    const readingTime = Math.ceil(wordCount / 200);
+
+    // Link count
+    const links = this.extractLinks(content);
+    const linkCount = links.length;
+
+    // Tag count
+    const tags = this.extractTagsFromContent(content);
+    const tagCount = tags.length;
+
+    // Heading count
+    const headings = content.match(/^#{1,6}\s+.+$/gm) || [];
+    const headingCount = headings.length;
+
+    return {
+      wordCount,
+      charCount,
+      readingTime,
+      linkCount,
+      tagCount,
+      headingCount
+    };
+  }
+
+  /**
+   * Get vault statistics
+   */
+  private async getVaultStats(): Promise<{
+    totalNotes: number;
+    totalAttachments: number;
+    totalWords: number;
+    totalLinks: number;
+    uniqueTags: number;
+    vaultSize: string;
+  }> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+    const attachmentExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.mp4', '.mp3', '.webm', '.wav'];
+    const attachments = files.filter(f => attachmentExtensions.some(ext => f.toLowerCase().endsWith(ext)));
+
+    let totalWords = 0;
+    let totalLinks = 0;
+    const allTags = new Set<string>();
+
+    for (const file of mdFiles) {
+      try {
+        const content = await this.readNote(file);
+        const stats = await this.getNoteStats(file);
+        totalWords += stats.wordCount;
+        totalLinks += stats.linkCount;
+
+        const tags = this.extractTagsFromContent(content);
+        tags.forEach(tag => allTags.add(tag));
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    // Calculate vault size
+    let totalSize = 0;
+    for (const file of files) {
+      try {
+        const fullPath = path.join(VAULT_PATH, file);
+        if (fs.existsSync(fullPath)) {
+          const stats = fs.statSync(fullPath);
+          totalSize += stats.size;
+        }
+      } catch (error) {
+        // Ignore errors
+      }
+    }
+
+    const vaultSize = totalSize > 1024 * 1024
+      ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB`
+      : `${(totalSize / 1024).toFixed(2)} KB`;
+
+    return {
+      totalNotes: mdFiles.length,
+      totalAttachments: attachments.length,
+      totalWords,
+      totalLinks,
+      uniqueTags: allTags.size,
+      vaultSize
+    };
+  }
+
+  /**
+   * Get recently modified or created notes
+   */
+  private async getRecentNotes(
+    limit: number,
+    sortBy: 'modified' | 'created'
+  ): Promise<{ path: string; time: string }[]> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+
+    const notesWithTime: { path: string; time: Date }[] = [];
+
+    for (const file of mdFiles) {
+      try {
+        const fullPath = path.join(VAULT_PATH, file);
+        if (fs.existsSync(fullPath)) {
+          const stats = fs.statSync(fullPath);
+          const time = sortBy === 'modified' ? stats.mtime : stats.birthtime;
+          notesWithTime.push({ path: file, time });
+        }
+      } catch (error) {
+        console.warn(`Failed to get stats for ${file}:`, error);
+      }
+    }
+
+    // Sort by time (most recent first)
+    notesWithTime.sort((a, b) => b.time.getTime() - a.time.getTime());
+
+    // Take top N and format
+    return notesWithTime.slice(0, limit).map(note => ({
+      path: note.path,
+      time: note.time.toISOString()
+    }));
+  }
+
+  // Content Operations Implementation Methods
+
+  /**
+   * Merge multiple notes into one
+   */
+  private async mergeNotes(
+    sourcePaths: string[],
+    destinationPath: string,
+    deleteSources: boolean,
+    separator: string
+  ): Promise<void> {
+    const contents: string[] = [];
+
+    for (const sourcePath of sourcePaths) {
+      const content = await this.readNote(sourcePath);
+      contents.push(content);
+    }
+
+    const mergedContent = contents.join(separator);
+    await this.createNote(destinationPath, mergedContent);
+
+    if (deleteSources) {
+      for (const sourcePath of sourcePaths) {
+        await this.deleteNote(sourcePath);
+      }
+    }
+  }
+
+  /**
+   * Split a note by headings
+   */
+  private async splitNote(
+    sourcePath: string,
+    destinationFolder: string,
+    headingLevel: number,
+    deleteSource: boolean
+  ): Promise<{ createdNotes: string[] }> {
+    const content = await this.readNote(sourcePath);
+    const lines = content.split('\n');
+
+    const headingRegex = new RegExp(`^#{${headingLevel}}\\s+(.+)$`);
+    const sections: { title: string; content: string }[] = [];
+    let currentSection: { title: string; content: string } | null = null;
+
+    for (const line of lines) {
+      const match = line.match(headingRegex);
+
+      if (match) {
+        // Save previous section
+        if (currentSection) {
+          sections.push(currentSection);
+        }
+
+        // Start new section
+        currentSection = {
+          title: match[1].trim(),
+          content: line + '\n'
+        };
+      } else if (currentSection) {
+        currentSection.content += line + '\n';
+      }
+    }
+
+    // Save last section
+    if (currentSection) {
+      sections.push(currentSection);
+    }
+
+    // Create notes
+    const createdNotes: string[] = [];
+    for (const section of sections) {
+      const notePath = path.join(destinationFolder, `${section.title}.md`);
+      await this.createNote(notePath, section.content);
+      createdNotes.push(notePath);
+    }
+
+    if (deleteSource) {
+      await this.deleteNote(sourcePath);
+    }
+
+    return { createdNotes };
+  }
+
+  /**
+   * Duplicate a note
+   */
+  private async duplicateNote(sourcePath: string, destinationPath: string): Promise<void> {
+    const content = await this.readNote(sourcePath);
+    await this.createNote(destinationPath, content);
+  }
+
+  /**
+   * Append content to a note
+   */
+  private async appendToNote(notePath: string, content: string, addTimestamp: boolean): Promise<void> {
+    const existingContent = await this.readNote(notePath);
+
+    let appendContent = content;
+    if (addTimestamp) {
+      const now = new Date();
+      const timestamp = `\n\n## ${now.toISOString()}\n\n`;
+      appendContent = timestamp + content;
+    }
+
+    const newContent = existingContent + '\n\n' + appendContent;
+    await this.createNote(notePath, newContent);
+  }
+
+  // Attachment Management Implementation Methods
+
+  /**
+   * List all attachments in vault
+   */
+  private async listAttachments(fileTypes: string[]): Promise<{ path: string; size: string }[]> {
+    const files = await this.listVaultFiles();
+
+    const attachmentExtensions = fileTypes.length > 0
+      ? fileTypes.map(ext => ext.startsWith('.') ? ext : '.' + ext)
+      : ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.mp4', '.mp3', '.webm', '.wav', '.bmp', '.tiff'];
+
+    const attachments: { path: string; size: string }[] = [];
+
+    for (const file of files) {
+      if (attachmentExtensions.some(ext => file.toLowerCase().endsWith(ext))) {
+        try {
+          const fullPath = path.join(VAULT_PATH, file);
+          if (fs.existsSync(fullPath)) {
+            const stats = fs.statSync(fullPath);
+            const size = stats.size > 1024 * 1024
+              ? `${(stats.size / (1024 * 1024)).toFixed(2)} MB`
+              : `${(stats.size / 1024).toFixed(2)} KB`;
+            attachments.push({ path: file, size });
+          }
+        } catch (error) {
+          console.warn(`Failed to get size for ${file}:`, error);
+        }
+      }
+    }
+
+    return attachments;
+  }
+
+  /**
+   * Find unused attachments
+   */
+  private async findUnusedAttachments(): Promise<string[]> {
+    const files = await this.listVaultFiles();
+    const mdFiles = files.filter(f => f.endsWith('.md'));
+
+    const attachmentExtensions = ['.pdf', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.mp4', '.mp3', '.webm', '.wav', '.bmp', '.tiff'];
+    const attachments = files.filter(f => attachmentExtensions.some(ext => f.toLowerCase().endsWith(ext)));
+
+    // Build set of all referenced attachments
+    const referencedAttachments = new Set<string>();
+
+    for (const file of mdFiles) {
+      try {
+        const content = await this.readNote(file);
+
+        // Extract all file references (both wikilinks and markdown links)
+        const wikilinkMatches = content.matchAll(/\[\[([^\]]+)\]\]/g);
+        const markdownLinkMatches = content.matchAll(/!\[.*?\]\(([^)]+)\)/g);
+
+        for (const match of wikilinkMatches) {
+          const ref = match[1].split('|')[0].trim();
+          referencedAttachments.add(ref);
+          // Also add with common basenames
+          referencedAttachments.add(path.basename(ref));
+        }
+
+        for (const match of markdownLinkMatches) {
+          const ref = match[1].trim();
+          referencedAttachments.add(ref);
+          referencedAttachments.add(path.basename(ref));
+        }
+      } catch (error) {
+        console.warn(`Failed to read file ${file}:`, error);
+      }
+    }
+
+    // Find attachments not in referenced set
+    const unused: string[] = [];
+    for (const attachment of attachments) {
+      const basename = path.basename(attachment);
+      if (!referencedAttachments.has(attachment) && !referencedAttachments.has(basename)) {
+        unused.push(attachment);
+      }
+    }
+
+    return unused;
+  }
+
+  /**
+   * Get attachments referenced in a specific note
+   */
+  private async getNoteAttachments(notePath: string): Promise<string[]> {
+    const content = await this.readNote(notePath);
+    const attachments: string[] = [];
+
+    // Extract all file references
+    const wikilinkMatches = content.matchAll(/!\[\[([^\]]+)\]\]/g);
+    const markdownLinkMatches = content.matchAll(/!\[.*?\]\(([^)]+)\)/g);
+
+    for (const match of wikilinkMatches) {
+      const ref = match[1].split('|')[0].trim();
+      attachments.push(ref);
+    }
+
+    for (const match of markdownLinkMatches) {
+      const ref = match[1].trim();
+      attachments.push(ref);
+    }
+
+    return attachments;
+  }
+
+  // Configuration Management Implementation Methods
+
+  /**
+   * Get config file path
+   */
+  private getConfigPath(): string {
+    return path.join(VAULT_PATH, '.obsidian-mcp.config.json');
+  }
+
+  /**
+   * Load configuration from file
+   */
+  private async loadConfig(): Promise<ObsidianMCPConfig> {
+    const configPath = this.getConfigPath();
+
+    try {
+      const fullPath = path.join(VAULT_PATH, '.obsidian-mcp.config.json');
+      if (fs.existsSync(fullPath)) {
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        const savedConfig = JSON.parse(content);
+        // Merge with defaults to ensure all fields exist
+        return this.mergeWithDefaults(savedConfig);
+      }
+    } catch (error) {
+      console.warn('Failed to load config, using defaults:', error);
+    }
+
+    return { ...DEFAULT_CONFIG };
+  }
+
+  /**
+   * Merge saved config with defaults
+   */
+  private mergeWithDefaults(savedConfig: Partial<ObsidianMCPConfig>): ObsidianMCPConfig {
+    return {
+      dailyNotes: { ...DEFAULT_CONFIG.dailyNotes, ...savedConfig.dailyNotes },
+      weeklyNotes: { ...DEFAULT_CONFIG.weeklyNotes, ...savedConfig.weeklyNotes },
+      templates: { ...DEFAULT_CONFIG.templates, ...savedConfig.templates },
+      attachments: { ...DEFAULT_CONFIG.attachments, ...savedConfig.attachments },
+      defaults: { ...DEFAULT_CONFIG.defaults, ...savedConfig.defaults },
+      patterns: { ...DEFAULT_CONFIG.patterns, ...savedConfig.patterns },
+    };
+  }
+
+  /**
+   * Save configuration to file
+   */
+  private async saveConfig(config: ObsidianMCPConfig): Promise<void> {
+    const configPath = this.getConfigPath();
+    const content = JSON.stringify(config, null, 2);
+
+    try {
+      fs.writeFileSync(configPath, content, 'utf-8');
+    } catch (error) {
+      throw new Error(`Failed to save config: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Update config values using dot notation
+   */
+  private async updateConfigValues(updates: { [key: string]: any }): Promise<void> {
+    const config = await this.loadConfig();
+
+    for (const [key, value] of Object.entries(updates)) {
+      const parts = key.split('.');
+
+      if (parts.length === 1) {
+        // Top-level update
+        (config as any)[parts[0]] = value;
+      } else if (parts.length === 2) {
+        // Nested update (e.g., "dailyNotes.folder")
+        const section = parts[0] as keyof ObsidianMCPConfig;
+        const field = parts[1];
+
+        if (!config[section]) {
+          (config as any)[section] = {};
+        }
+        (config[section] as any)[field] = value;
+      } else {
+        throw new Error(`Invalid config key: ${key}. Use format "section.field"`);
+      }
+    }
+
+    await this.saveConfig(config);
+  }
+
+  /**
+   * Add a custom note pattern
+   */
+  private async addNotePattern(
+    patternName: string,
+    folder: string,
+    filenameFormat?: string,
+    template?: string,
+    description?: string
+  ): Promise<void> {
+    const config = await this.loadConfig();
+
+    if (!config.patterns) {
+      config.patterns = {};
+    }
+
+    config.patterns[patternName] = {
+      folder,
+      filenameFormat,
+      template,
+      description,
+    };
+
+    await this.saveConfig(config);
+  }
+
+  /**
+   * Remove a note pattern
+   */
+  private async removeNotePattern(patternName: string): Promise<void> {
+    const config = await this.loadConfig();
+
+    if (!config.patterns || !config.patterns[patternName]) {
+      throw new Error(`Pattern "${patternName}" not found`);
+    }
+
+    delete config.patterns[patternName];
+
+    await this.saveConfig(config);
+  }
+
+  /**
+   * Create a note from a configured pattern
+   */
+  private async createNoteFromPattern(
+    patternName: string,
+    title: string,
+    variables: { [key: string]: string }
+  ): Promise<string> {
+    const config = await this.loadConfig();
+
+    if (!config.patterns || !config.patterns[patternName]) {
+      throw new Error(`Pattern "${patternName}" not found. Use list_patterns to see available patterns.`);
+    }
+
+    const pattern = config.patterns[patternName];
+
+    // Generate filename
+    let filename = pattern.filenameFormat || '{{title}}';
+    filename = filename.replace(/\{\{title\}\}/g, title);
+    filename = filename.replace(/\{\{date\}\}/g, this.formatDate(new Date(), 'YYYY-MM-DD'));
+
+    // Replace custom variables
+    for (const [key, value] of Object.entries(variables)) {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      filename = filename.replace(regex, value);
+    }
+
+    // Ensure .md extension
+    if (!filename.endsWith('.md')) {
+      filename += '.md';
+    }
+
+    // Build full path
+    const notePath = path.join(pattern.folder, filename);
+
+    // Get template content if specified
+    let content = '';
+    if (pattern.template) {
+      try {
+        content = await this.readNote(pattern.template);
+
+        // Replace variables in template
+        content = content.replace(/\{\{title\}\}/g, title);
+        content = content.replace(/\{\{date\}\}/g, this.formatDate(new Date(), 'YYYY-MM-DD'));
+        content = content.replace(/\{\{time\}\}/g, new Date().toLocaleTimeString());
+
+        for (const [key, value] of Object.entries(variables)) {
+          const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+          content = content.replace(regex, value);
+        }
+      } catch (error) {
+        console.warn(`Template not found: ${pattern.template}, creating empty note`);
+        content = `# ${title}\n\n`;
+      }
+    } else {
+      content = `# ${title}\n\n`;
+    }
+
+    // Create the note
+    await this.createNote(notePath, content);
+
+    return notePath;
+  }
+
+  /**
+   * Reset config to defaults
+   */
+  private async resetConfigToDefaults(): Promise<void> {
+    await this.saveConfig({ ...DEFAULT_CONFIG });
+  }
+
+  /**
+   * Get config value with fallback to defaults
+   */
+  private async getConfigValue(section: keyof ObsidianMCPConfig, field: string, defaultValue: any): Promise<any> {
+    const config = await this.loadConfig();
+    const sectionConfig = config[section] as any;
+
+    if (sectionConfig && sectionConfig[field] !== undefined) {
+      return sectionConfig[field];
+    }
+
+    return defaultValue;
   }
 
   // Start the server
