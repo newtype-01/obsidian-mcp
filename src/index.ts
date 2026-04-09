@@ -182,6 +182,8 @@ function escapeRegExp(string: string): string {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const COMMON_WORDS = new Set(['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'over', 'after']);
+
 function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: {
   minLength: number;
   caseSensitive: boolean;
@@ -218,13 +220,24 @@ function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: 
   // Sort skip regions by start position
   skipRegions.sort((a, b) => a.start - b.start);
   
-  // Function to check if a position is in a skip region
+  // Binary search: find first region whose end > start
   function isInSkipRegion(start: number, end: number): boolean {
-    return skipRegions.some(region => 
-      (start >= region.start && start < region.end) ||
-      (end > region.start && end <= region.end) ||
-      (start <= region.start && end >= region.end)
-    );
+    let lo = 0, hi = skipRegions.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (skipRegions[mid].end <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    // Check if any overlapping region exists from lo onward
+    for (let k = lo; k < skipRegions.length && skipRegions[k].start < end; k++) {
+      const region = skipRegions[k];
+      if (
+        (start >= region.start && start < region.end) ||
+        (end > region.start && end <= region.end) ||
+        (start <= region.start && end >= region.end)
+      ) return true;
+    }
+    return false;
   }
   
   // Process each note in the index
@@ -234,8 +247,7 @@ function createBacklinkMatches(content: string, noteIndex: NoteInfo[], options: 
     }
     
     // Skip very common words to avoid over-linking
-    const commonWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'over', 'after'];
-    if (commonWords.includes(note.nameWithoutExt.toLowerCase())) {
+    if (COMMON_WORDS.has(note.nameWithoutExt.toLowerCase())) {
       continue;
     }
     
@@ -616,66 +628,45 @@ function parseMarkdown(content: string): MarkdownElement[] {
   return elements;
 }
 
-// 查找标题位置
+// 查找标题位置 (single pass: exact → contains → normalized)
 function findHeadingPosition(
-  elements: MarkdownElement[], 
-  heading: string, 
+  elements: MarkdownElement[],
+  heading: string,
   level?: number
 ): { index: number; element: MarkdownElement } | null {
   const lowerHeading = heading.toLowerCase().trim();
-  
-  // 先尝试精确匹配
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 精确匹配
-      if (element.content.toLowerCase().trim() === lowerHeading) {
-        return { index: i, element };
-      }
-    }
-  }
-  
-  // 如果精确匹配失败，尝试模糊匹配
-  for (let i = 0; i < elements.length; i++) {
-    const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 包含匹配
-      if (element.content.toLowerCase().includes(lowerHeading)) {
-        return { index: i, element };
-      }
-    }
-  }
-  
-  // 最后尝试更宽松的匹配（移除特殊字符）
   const normalizedHeading = lowerHeading.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+
+  let containsMatch: { index: number; element: MarkdownElement } | null = null;
+  let normalizedMatch: { index: number; element: MarkdownElement } | null = null;
+
   for (let i = 0; i < elements.length; i++) {
     const element = elements[i];
-    if (element.type === 'heading') {
-      // 级别过滤
-      if (level && element.level !== level) {
-        continue;
-      }
-      
-      // 标准化后匹配
-      const normalizedContent = element.content.toLowerCase()
-        .replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
+    if (element.type !== 'heading') continue;
+    if (level && element.level !== level) continue;
+
+    const lowerContent = element.content.toLowerCase().trim();
+
+    // Exact match — return immediately
+    if (lowerContent === lowerHeading) {
+      return { index: i, element };
+    }
+
+    // Record first contains match
+    if (!containsMatch && lowerContent.includes(lowerHeading)) {
+      containsMatch = { index: i, element };
+    }
+
+    // Record first normalized match
+    if (!normalizedMatch) {
+      const normalizedContent = lowerContent.replace(/[^\w\s]/g, '').replace(/\s+/g, ' ');
       if (normalizedContent.includes(normalizedHeading)) {
-        return { index: i, element };
+        normalizedMatch = { index: i, element };
       }
     }
   }
-  
-  return null;
+
+  return containsMatch ?? normalizedMatch ?? null;
 }
 
 // 查找块ID位置
@@ -948,26 +939,26 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
       
       // Try flexible line-by-line matching
       const oldLines = oldText.split('\n');
+      const trimmedOldLines = oldLines.map(l => l.trim()); // pre-trim once
       const newLines = newText.split('\n');
       let matchFound = false;
-      
+
       // Find matching sequence of lines
       for (let i = 0; i <= lines.length - oldLines.length; i++) {
         let isMatch = true;
         const matchedIndentations: string[] = [];
-        
+
         // Check if lines match (ignoring leading/trailing whitespace)
         for (let j = 0; j < oldLines.length; j++) {
           const contentLine = lines[i + j];
-          const oldLine = oldLines[j];
-          
+
           // Extract indentation from content line
           const indentMatch = contentLine.match(/^(\s*)/);
           const indentation = indentMatch ? indentMatch[1] : '';
           matchedIndentations.push(indentation);
-          
+
           // Compare trimmed lines
-          if (contentLine.trim() !== oldLine.trim()) {
+          if (contentLine.trim() !== trimmedOldLines[j]) {
             isMatch = false;
             break;
           }
@@ -1012,11 +1003,12 @@ async function applyNoteEdits(filePath: string, edits: EditOperation[], dryRun: 
     fs.writeFileSync(tempFile, modifiedContent, 'utf-8');
     fs.renameSync(tempFile, fullPath);
   } catch (error) {
-    // Clean up temp file if it exists
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
     throw new Error(`Failed to write file ${filePath}: ${error}`);
+  } finally {
+    // Clean up temp file if rename failed and it still exists
+    if (fs.existsSync(tempFile)) {
+      try { fs.unlinkSync(tempFile); } catch { /* ignore */ }
+    }
   }
   
   return `File ${filePath} updated successfully`;
