@@ -5,6 +5,7 @@ English | [中文](./README.zh.md)
 This project implements a Model Context Protocol (MCP) server for connecting AI models with Obsidian knowledge bases. Through this server, AI models can directly access and manipulate Obsidian notes, including reading, creating, updating, and deleting notes, as well as managing folder structures.
 
 Created by huangyihe
+
 - Prompt House: https://prompthouse.app/
 - YouTube: https://www.youtube.com/@huanyihe777
 - Twitter: https://x.com/huangyihe
@@ -16,8 +17,9 @@ Created by huangyihe
 - **📝 Complete Note Management**: Read, create, update, and delete notes with advanced text replacement
 - **📁 Folder Operations**: Create, rename, move, and delete folders with full hierarchy support
 - **🔍 Intelligent Search**: Full-text search across all file types with smart scoring
-- **🤖 AI-Powered Analysis**: **NEW** Strategic insights using TRILEMMA-PRINCIPLES framework
-- **🔗 Auto Backlink Generation**: **NEW** Intelligent detection and conversion of note names to wikilinks
+- **🎯 Exclusion Settings Support**: **NEW** Automatically respects Obsidian's configured file exclusion patterns from `userIgnoreFilters`
+- **🤖 AI-Powered Analysis**: Strategic insights using TRILEMMA-PRINCIPLES framework
+- **🔗 Auto Backlink Generation**: Intelligent detection and conversion of note names to wikilinks
 - **⚡ Precision Editing**: Advanced PATCH operations with heading and block-level targeting
 - **🚀 Dual API Strategy**: Obsidian REST API with filesystem fallback for maximum reliability
 - **🎯 Context Optimization**: Smart content summarization for LLM context length management
@@ -28,18 +30,26 @@ Created by huangyihe
 The MCP server provides the following comprehensive tools:
 
 ### 📋 Core Operations
+
 - `list_notes`: List notes in the Obsidian vault with optional folder filtering
-  - **NEW** `recursive` parameter: Control whether to list files recursively in subdirectories (default: true)
+  - `recursive` parameter: Control whether to list files recursively in subdirectories (default: true)
   - Use `recursive: false` to list only files in the specified folder without subdirectories
+  - **Respects exclusion settings**: Excluded files/folders won't appear in the listing
 - `read_note`: Read the content of a specific note in the Obsidian vault
 - `read_multiple_notes`: Read content from multiple notes simultaneously for batch processing
 - `create_note`: Create a new note in the Obsidian vault with full content
 - `delete_note`: Delete a note from the Obsidian vault
 - `search_vault`: Advanced search across all file types with filename and content matching
+  - **Pagination**: `limit` (1-500, default 50), `offset` (default 0)
+  - **Filtering**: `pathPrefix`, `extensions`, `matchType` (`filename` | `content` | `both`)
+  - **Sorting**: `sortBy` (`score` | `path`) and `sortDirection` (`asc` | `desc`)
+  - **Structured output**: Returns `total`, `returned`, `hasMore`, and paged `results`
+  - **Respects exclusion settings**: Search results exclude files matching Obsidian's exclusion patterns
 - `move_note`: Move or rename notes to new locations (supports all file types including PDFs)
 - `manage_folder`: Complete folder CRUD operations (create/rename/move/delete)
 
 ### 🚀 Advanced Features
+
 - `update_note`: **Enhanced** Update content using text replacements OR precision insertion
   - Traditional text replacement mode
   - **NEW** Heading-based insertion (before/after/append/prepend)
@@ -51,13 +61,31 @@ The MCP server provides the following comprehensive tools:
   - Convert text references to wikilink format (`[[note name]]`)
   - Smart pattern matching with false positive prevention
   - Configurable dry-run mode and batch processing
-  
-- `notes_insight`: **🧠 AI-Powered Strategic Analysis** ⭐ **NEW**
+- `notes_insight`: **🧠 AI-Powered Strategic Analysis** ⭐
   - Generate strategic insights using TRILEMMA-PRINCIPLES framework
   - Automatic topic-based note discovery and relevance ranking
   - AI-driven content summarization for context optimization
   - Structured analysis: constraint identification → assumption challenges → breakthrough solutions
   - Configurable parameters for analysis depth and scope
+
+## 🎯 Exclusion Settings Support
+
+The MCP server automatically respects your Obsidian vault's configured file exclusion patterns:
+
+- **Automatic Loading**: Reads exclusion patterns from `.obsidian/app.json` (`userIgnoreFilters` array)
+- **Default Exclusions**: Always excludes `.obsidian`, `.git`, and `.DS_Store`
+- **Smart Filtering**: Applied to `list_notes` and `search_vault` tools with glob-style path matching
+- **Consistent Access Rules**: `read_note` respects exclusion rules and will not read excluded paths
+
+### How to Configure Exclusions in Obsidian
+
+1. Open Obsidian Settings → Files & Links
+2. In the "Ignore files" section, add your exclusion patterns:
+   - `folder/` - Exclude entire folder (include trailing slash)
+   - `file.md` - Exclude specific file
+   - `*.tmp` - Use glob patterns
+
+These settings are automatically loaded by the MCP server on startup.
 
 ## Prerequisites
 
@@ -69,11 +97,11 @@ The MCP server provides the following comprehensive tools:
 
 Choose the most suitable installation method based on your technical level and usage needs:
 
-| Method | Target Users | Advantages | Disadvantages |
-|--------|-------------|------------|---------------|
-| **🎯 One-Click Install (DXT)** | General users | Simplest, GUI configuration | Requires DXT-enabled client |
-| **📦 Remote Install (NPM)** | Node.js users | Auto-updates, no installation | Requires network connection |
-| **🔧 Local Deploy** | Advanced users | Offline use, full control | Manual updates required |
+| Method                         | Target Users   | Advantages                    | Disadvantages               |
+| ------------------------------ | -------------- | ----------------------------- | --------------------------- |
+| **🎯 One-Click Install (DXT)** | General users  | Simplest, GUI configuration   | Requires DXT-enabled client |
+| **📦 Remote Install (NPM)**    | Node.js users  | Auto-updates, no installation | Requires network connection |
+| **🔧 Local Deploy**            | Advanced users | Offline use, full control     | Manual updates required     |
 
 ---
 
@@ -102,14 +130,13 @@ Double-click the downloaded `.dxt` file and the system will automatically instal
 Simply add the following configuration to your MCP client config file:
 
 **Using npx (recommended, no pre-installation required):**
+
 ```json
 {
   "mcpServers": {
     "obsidian-mcp": {
       "command": "npx",
-      "args": [
-        "@huangyihe/obsidian-mcp"
-      ],
+      "args": ["@huangyihe/obsidian-mcp"],
       "env": {
         "OBSIDIAN_VAULT_PATH": "/path/to/your/vault",
         "OBSIDIAN_API_TOKEN": "your_api_token",
@@ -131,11 +158,13 @@ Simply add the following configuration to your MCP client config file:
 ### Option A: Global Install (Recommended)
 
 **Step 1: Global Install**
+
 ```bash
 npm install -g @huangyihe/obsidian-mcp
 ```
 
 **Step 2: MCP Client Configuration**
+
 ```json
 {
   "mcpServers": {
@@ -154,28 +183,33 @@ npm install -g @huangyihe/obsidian-mcp
 ### Option B: Source Deploy
 
 **Step 1: Clone Repository**
+
 ```bash
 git clone https://github.com/newtype-01/obsidian-mcp.git
 cd obsidian-mcp
 ```
 
 **Step 2: Install Dependencies**
+
 ```bash
 npm install
 ```
 
 **Step 3: Build Project**
+
 ```bash
 npm run build
 ```
 
 **Step 4: Configure Environment Variables**
+
 ```bash
 cp .env.example .env
 # Edit .env file with your configuration
 ```
 
 **Step 5: Start Server**
+
 ```bash
 npm start
 ```
@@ -217,7 +251,7 @@ docker run -d \
 All installation methods require the following configuration:
 
 - `OBSIDIAN_VAULT_PATH`: Path to your Obsidian vault
-- `OBSIDIAN_API_TOKEN`: API token for Obsidian Local REST API plugin  
+- `OBSIDIAN_API_TOKEN`: API token for Obsidian Local REST API plugin
 - `OBSIDIAN_API_PORT`: API port for Obsidian Local REST API (default: 27123)
 
 ⚠️ **Important**: For remote NPM installation and global installation, you MUST use the `OBSIDIAN_` prefix for environment variables. The variables `VAULT_PATH`, `API_TOKEN` without the prefix will not work correctly.
@@ -228,14 +262,18 @@ All installation methods require the following configuration:
 2. Generate API Token in plugin settings
 3. Note the port number (default 27123)
 
-
 ## Testing
 
-The project includes a test script to verify server functionality:
+Run the automated test suite:
 
 ```bash
-node test-mcp.js
+npm test
 ```
+
+Current test stages:
+- `scripts/smoke-test.mjs` (CLI/build smoke coverage)
+- `scripts/stage1-test.mjs` (metadata/properties/editing tool workflows)
+- `scripts/stage2-test.mjs` (Base creation/validation/query workflows)
 
 ## Development
 
@@ -253,4 +291,4 @@ Pull Requests and Issues are welcome!
 ## Related Projects
 
 - [Model Context Protocol](https://github.com/anthropics/model-context-protocol)
-- [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) 
+- [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api)

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -118,7 +118,7 @@ For troubleshooting DXT issues, detailed debug code is available in `debug-code.
 To enable debug mode:
 1. Copy debug code from `debug-code.md` to appropriate locations in `src/index.ts`
 2. Build and generate debug DXT version
-3. Monitor Claude Desktop logs: `tail -f ~/Library/Logs/Claude/mcp*.log`
+3. Monitor Codex Desktop logs: `tail -f ~/Library/Logs/Codex/mcp*.log`
 
 ## Auto Backlink Vault Tool
 
@@ -231,7 +231,7 @@ The tool uses a sophisticated analytical framework that:
 - Creates actionable implementation pathways
 
 ### Previous Updates (v1.4.0)
-- **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Claude Desktop
+- **🎉 DXT Installation Fully Fixed**: Resolved all compatibility issues with Codex Desktop
 - **🔍 Enhanced Search**: Dual search (filename + content), supports all file types, smart scoring
 - **🚀 Stability Improvements**: Fixed API response parsing, better error handling, streamlined debug output
 - **📚 Documentation**: Updated README files to reflect stable DXT support, removed compatibility warnings

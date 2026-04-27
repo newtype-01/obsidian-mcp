@@ -7,10 +7,10 @@
     "obsidian-mcp": "./build/index.js"
   },
   "scripts": {
-    "build": "tsc && chmod +x build/index.js",
+    "build": "tsc && node scripts/ensure-executable.mjs",
     "start": "node build/index.js",
     "dev": "ts-node --esm src/index.ts",
-    "test": "node test-mcp.js",
+    "test": "node scripts/smoke-test.mjs && node scripts/stage1-test.mjs && node scripts/stage2-test.mjs",
     "generate-dxt": "npm run build && node generate-dxt.js",
     "prepublishOnly": "npm run build"
   },
@@ -57,6 +57,7 @@
     "node-fetch": "^3.3.2",
     "path-browserify": "^1.0.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "yaml": "^2.8.3"
   }
 }

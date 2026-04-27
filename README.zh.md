@@ -36,6 +36,10 @@ MCP 服务器提供以下全面的工具集：
 - `create_note`: 在知识库中创建包含完整内容的新笔记
 - `delete_note`: 从知识库中删除笔记
 - `search_vault`: 跨所有文件类型的高级搜索，支持文件名和内容匹配
+  - 分页：`limit`（1-500，默认 50）、`offset`（默认 0）
+  - 过滤：`pathPrefix`、`extensions`、`matchType`（`filename` | `content` | `both`）
+  - 排序：`sortBy`（`score` | `path`）、`sortDirection`（`asc` | `desc`）
+  - 返回结果：包含 `total`、`returned`、`hasMore` 和当前页 `results`
 - `move_note`: 移动或重命名笔记到新位置 (支持所有文件类型包括PDF)
 - `manage_folder`: 完整的文件夹 CRUD 操作 (创建/重命名/移动/删除)
 
