@@ -1227,7 +1227,7 @@ class ObsidianMcpServer {
               },
               edits: {
                 type: 'array',
-                description: 'Array of edit operations to apply',
+                description: 'Array of edit operations to apply. Each edit is EITHER a replace (oldText+newText) OR an insert (mode=insert + heading or blockId + content). Runtime validation enforces valid combinations.',
                 items: {
                   type: 'object',
                   properties: {
@@ -1272,12 +1272,9 @@ class ObsidianMcpServer {
                       type: 'string',
                       description: 'Block ID for block-based insertion (^block-id)'
                     }
-                  },
-                  anyOf: [
-                    { required: ['oldText', 'newText'] },     // 替换模式
-                    { required: ['mode', 'heading', 'content'] }, // 标题插入
-                    { required: ['mode', 'blockId', 'content'] }   // 块插入
-                  ]
+                  }
+                  // anyOf removed for broad model compatibility.
+                  // Runtime validation in validateEditOperation() enforces valid field combinations.
                 }
               },
               dryRun: {
